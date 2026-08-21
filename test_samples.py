@@ -31,11 +31,15 @@ samples = [
     "объект \"ДРУЖБА\" расположен",
     "принято решение - утвердить проект",
     "предельные параметры:\nследующий абзац",
+    "см. рис. 5, табл. 3 и стр. 12",
+    "прил. 2, гл. 4, разд. 5, абз. 2, пп. 3",
+    "с. 12 (страница), но с. Ивановское (село)",
+    "в период 2020-2025 гг. и в 1990 гг.",
 ]
 
 for s in samples:
     out = R.apply_all(s, log=True)
-    marker = out.replace(R.NBSP, '‌[nbsp]').replace(R.NBH, '[nbh]')
+    marker = out.replace(R.NBSP, '[nbsp]').replace(R.NBH, '[nbh]')
     print(f"IN:  {s}")
     print(f"OUT: {marker}")
     print()

@@ -195,16 +195,17 @@ class App:
                   foreground='#666').pack(anchor='w', padx=6, pady=(0, 6))
 
         # --- Что применять ---
+        # Структура временно отключена: ломает документы, дорабатывается отдельно.
+        # Плечо do_struct в process_one сохранено — включить обратно = вернуть чекбокс.
         what = ttk.LabelFrame(self.root, text='2. Что применять')
         what.pack(fill='x', **pad)
-        self.var_struct = tk.BooleanVar(value=True)
+        self.var_struct = tk.BooleanVar(value=False)   # структура пока выключена
         self.var_typo = tk.BooleanVar(value=True)
-        ttk.Checkbutton(what, text='Структура  (стили, списки, таблицы, поля, единая нумерация заголовков)',
-                        variable=self.var_struct).pack(anchor='w', padx=8, pady=2)
         ttk.Checkbutton(what, text='Типографика  (неразрывные пробелы, дефисы, единицы измерения)',
                         variable=self.var_typo).pack(anchor='w', padx=8, pady=2)
-        ttk.Label(what, text='При обоих включённых порядок: структура → типографика.',
-                  foreground='#666').pack(anchor='w', padx=8, pady=(0, 6))
+        ttk.Label(what, text='Структура (стили, списки, таблицы, заголовки) временно отключена — '
+                            'ломает документы, дорабатывается отдельно.',
+                  foreground='#a00').pack(anchor='w', padx=8, pady=(0, 6))
 
         # --- Куда ---
         out = ttk.LabelFrame(self.root, text='3. Результат')
