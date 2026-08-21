@@ -1,0 +1,207 @@
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTBody">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1054;&#1089;&#1085;&#1086;&#1074;&#1085;&#1086;&#1081;"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:spacing w:after="0" w:line="360" w:lineRule="auto"/>
+    <w:ind w:firstLine="709"/>
+    <w:jc w:val="both"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTHeading1">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1047;&#1072;&#1075;&#1086;&#1083;&#1086;&#1074;&#1086;&#1082; 1"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:keepNext/>
+    <w:numPr>
+      <w:ilvl w:val="0"/>
+      <w:numId w:val="2"/>
+    </w:numPr>
+    <w:spacing w:after="120" w:before="240"/>
+    <w:outlineLvl w:val="0"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:b/>
+    <w:bCs/>
+    <w:i w:val="false"/>
+    <w:iCs w:val="false"/>
+    <w:sz w:val="28"/>
+    <w:szCs w:val="28"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTHeading2">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1047;&#1072;&#1075;&#1086;&#1083;&#1086;&#1074;&#1086;&#1082; 2"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:keepNext/>
+    <w:numPr>
+      <w:ilvl w:val="1"/>
+      <w:numId w:val="2"/>
+    </w:numPr>
+    <w:spacing w:after="80" w:before="200"/>
+    <w:outlineLvl w:val="1"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:b/>
+    <w:bCs/>
+    <w:i w:val="false"/>
+    <w:iCs w:val="false"/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTHeading3">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1047;&#1072;&#1075;&#1086;&#1083;&#1086;&#1074;&#1086;&#1082; 3"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:keepNext/>
+    <w:numPr>
+      <w:ilvl w:val="2"/>
+      <w:numId w:val="2"/>
+    </w:numPr>
+    <w:spacing w:after="80" w:before="160"/>
+    <w:outlineLvl w:val="2"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:b/>
+    <w:bCs/>
+    <w:i w:val="false"/>
+    <w:iCs w:val="false"/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTHeading4">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1047;&#1072;&#1075;&#1086;&#1083;&#1086;&#1074;&#1086;&#1082; 4"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:keepNext/>
+    <w:numPr>
+      <w:ilvl w:val="3"/>
+      <w:numId w:val="2"/>
+    </w:numPr>
+    <w:spacing w:after="80" w:before="120"/>
+    <w:outlineLvl w:val="3"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:b/>
+    <w:bCs/>
+    <w:i/>
+    <w:iCs/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTHeading5">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1047;&#1072;&#1075;&#1086;&#1083;&#1086;&#1074;&#1086;&#1082; 5"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:keepNext/>
+    <w:numPr>
+      <w:ilvl w:val="4"/>
+      <w:numId w:val="2"/>
+    </w:numPr>
+    <w:spacing w:after="80" w:before="80"/>
+    <w:outlineLvl w:val="4"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:b/>
+    <w:bCs/>
+    <w:i/>
+    <w:iCs/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTListBullet">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1057;&#1087;&#1080;&#1089;&#1086;&#1082; (&#1084;&#1072;&#1088;&#1082;&#1077;&#1088;)"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTListBullet"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:numPr>
+      <w:ilvl w:val="0"/>
+      <w:numId w:val="3"/>
+    </w:numPr>
+    <w:spacing w:line="360" w:lineRule="auto"/>
+    <w:jc w:val="both"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTListNumbered">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1057;&#1087;&#1080;&#1089;&#1086;&#1082; (&#1085;&#1091;&#1084;&#1077;&#1088;&#1072;&#1094;&#1080;&#1103;)"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTListNumbered"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:numPr>
+      <w:ilvl w:val="0"/>
+      <w:numId w:val="4"/>
+    </w:numPr>
+    <w:spacing w:line="360" w:lineRule="auto"/>
+    <w:jc w:val="both"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTTableCaption">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1053;&#1072;&#1079;&#1074;&#1072;&#1085;&#1080;&#1077; &#1090;&#1072;&#1073;&#1083;&#1080;&#1094;&#1099;"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:keepNext/>
+    <w:spacing w:after="60" w:before="160"/>
+    <w:jc w:val="left"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>
+<w:style xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:type="paragraph" w:styleId="DPTFigureCaption">
+  <w:name w:val="&#1044;&#1055;&#1058; - &#1053;&#1072;&#1079;&#1074;&#1072;&#1085;&#1080;&#1077; &#1088;&#1080;&#1089;&#1091;&#1085;&#1082;&#1072;"/>
+  <w:basedOn w:val="Normal"/>
+  <w:next w:val="DPTBody"/>
+  <w:qFormat/>
+  <w:pPr>
+    <w:spacing w:after="160" w:before="60"/>
+    <w:jc w:val="center"/>
+  </w:pPr>
+  <w:rPr>
+    <w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>
+    <w:i/>
+    <w:iCs/>
+    <w:sz w:val="24"/>
+    <w:szCs w:val="24"/>
+  </w:rPr>
+</w:style>

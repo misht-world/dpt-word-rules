@@ -1,0 +1,126 @@
+{
+  "_source": "Извлечено из эталонного документа «ПП-МО-Р4_М1_-_Пояснительная_записка.docx».",
+  "style_naming": {
+    "_note": "Используем существующую в эталоне конвенцию именования («ДПТ - Основной», «маркер»), чтобы переопределение стилей каскадировалось на уже размеченный текст в документах, где такие стили уже есть.",
+    "heading_prefix": "ДПТ - Заголовок",
+    "body": "ДПТ - Основной",
+    "list_bullet": "ДПТ - Список (маркер)",
+    "list_numbered": "ДПТ - Список (нумерация)",
+    "table_style": "ДПТ - Таблица"
+  },
+  "headings": {
+    "_note": "Настоящая многоуровневая автонумерация Word (numPr на уровне стиля + outlineLvl для оглавления/навигатора), 5 уровней. КЛЮЧЕВОЕ РЕШЕНИЕ: normalize_structure.py переводит на эту единую схему АБСОЛЮТНО ВСЕ заголовки документа — и уже стилизованные (родные outlineLvl-стили документа), и \"сломанные\" (номер напечатан вручную в тексте). Родная нумерация существующих документов НЕ переиспользуется (ненадёжно обобщать — у каждого документа она устроена по-своему, вплоть до цепочек numStyleLink). Поэтому в normalize_structure.py нет \"защиты\" существующих заголовков от переприсвоения — единая нумерация для всех, иначе в документе останется смесь двух систем нумерации с несогласованными номерами.",
+    "format": "1. / 1.1. / 1.1.1. / 1.1.1.1. / 1.1.1.1.1.",
+    "levels": [
+      {
+        "level": 1,
+        "font": "Times New Roman",
+        "size_pt": 14,
+        "bold": true,
+        "space_before_pt": 12,
+        "space_after_pt": 6
+      },
+      {
+        "level": 2,
+        "font": "Times New Roman",
+        "size_pt": 12,
+        "bold": true,
+        "space_before_pt": 10,
+        "space_after_pt": 4
+      },
+      {
+        "level": 3,
+        "font": "Times New Roman",
+        "size_pt": 12,
+        "bold": true,
+        "space_before_pt": 8,
+        "space_after_pt": 4
+      },
+      {
+        "level": 4,
+        "font": "Times New Roman",
+        "size_pt": 12,
+        "bold": true,
+        "italics": true,
+        "space_before_pt": 6,
+        "space_after_pt": 4
+      },
+      {
+        "level": 5,
+        "font": "Times New Roman",
+        "size_pt": 12,
+        "bold": true,
+        "italics": true,
+        "space_before_pt": 4,
+        "space_after_pt": 4
+      }
+    ]
+  },
+  "body": {
+    "font": "Times New Roman",
+    "size_pt": 12,
+    "bold": false,
+    "alignment": "justify",
+    "first_line_indent_cm": 1.25,
+    "first_line_indent_twips": 709,
+    "line_spacing": 1.5,
+    "line_spacing_rule": "auto",
+    "space_after_pt": 0
+  },
+  "list_bullet": {
+    "_note": "Настоящий Word-список (numPr), не вручную напечатанный дефис. Реальный паттерн из документов: маркер '-', без доп. отступа (тот же 1,25 см что у обычного текста).",
+    "font": "Times New Roman",
+    "size_pt": 12,
+    "marker": "-",
+    "indent_twips": 709,
+    "alignment": "justify",
+    "line_spacing": 1.5
+  },
+  "list_numbered": {
+    "_note": "Настоящий Word-список (numPr). Реальный паттерн из документов: '1)', '2)' — скобка, один уровень (не путать с заголовками — у тех точка и вложенность).",
+    "font": "Times New Roman",
+    "size_pt": 12,
+    "format": "1)",
+    "indent_twips": 709,
+    "alignment": "justify",
+    "line_spacing": 1.5
+  },
+  "table": {
+    "font": "Times New Roman",
+    "size_pt": 11,
+    "border_style": "single",
+    "border_width_pt": 0.5,
+    "border_color": "auto",
+    "header_row": {
+      "bold": true,
+      "align": "center",
+      "shading": null
+    },
+    "body_row": {
+      "bold": false,
+      "align": "left"
+    },
+    "cell_margin_twips": {
+      "top": 20,
+      "bottom": 20,
+      "left": 100,
+      "right": 100
+    }
+  },
+  "page": {
+    "size": "A4",
+    "_note": "Измерено фактически в эталонном документе (не ГОСТ-дефолт, у него нестандартно узкие нижнее/правое поля).",
+    "margins_cm": {
+      "top": 1.25,
+      "bottom": 0.7,
+      "left": 2.0,
+      "right": 1.0
+    },
+    "margins_twips": {
+      "top": 709,
+      "bottom": 397,
+      "left": 1134,
+      "right": 567
+    }
+  }
+}
