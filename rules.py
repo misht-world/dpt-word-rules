@@ -28,14 +28,21 @@ def _sub(pattern, repl, text, name, flags=0):
 # 1. Единицы измерения: унификация м²/м2/m3 -> "кв. м" / "куб. м"
 # ---------------------------------------------------------------------------
 
+# Верхний индекс 2/3 в Word — это ОБЫЧНАЯ цифра (реже юникод ²/³) в отдельном
+# run'е с надстрочным форматированием; в тексте выглядит как "м2"/"м3". Иногда
+# тройка набрана кириллической «З» (U+0417) — тоже учитываем. Приводим к тексту
+# "кв.<nbsp>м"/"куб.<nbsp>м" ДАЖЕ без цифры слева (заголовки таблиц "Объём, м3").
+# Защита от дм2/см2/мм2 и слов — lookbehind: перед "м" не должно быть буквы.
+_M2 = r'(?<![А-Яа-яЁёA-Za-z])м[2²]\b'
+_M3 = r'(?<![А-Яа-яЁёA-Za-z])м[3³З]\b'
+
+
 def fix_unit_names(text):
-    text = _sub(r'(?<=\d)\s?м\s?2\b', ' кв. м', text, 'unit-m2->kvm')
-    text = _sub(r'(?<=\d)\s?м²', ' кв. м', text, 'unit-m2sup->kvm')
-    text = _sub(r'(?<=\d)\s?м\s?3\b', ' куб. м', text, 'unit-m3->kubm')
-    text = _sub(r'(?<=\d)\s?м³', ' куб. м', text, 'unit-m3sup->kubm')
-    # уже словами, но без / с неправильным пробелом после точки
-    text = _sub(r'кв\.\s?м\b', 'кв. м', text, 'unit-kvm-normalize')
-    text = _sub(r'куб\.\s?м\b', 'куб. м', text, 'unit-kubm-normalize')
+    text = _sub(_M2, 'кв.' + NBSP + 'м', text, 'unit-m2->kvm')
+    text = _sub(_M3, 'куб.' + NBSP + 'м', text, 'unit-m3->kubm')
+    # уже словами (кв.м / кв. м / кв.<nbsp>м) -> канон с неразрывным пробелом
+    text = _sub(r'кв\.[ \t ]?м\b', 'кв.' + NBSP + 'м', text, 'unit-kvm-normalize')
+    text = _sub(r'куб\.[ \t ]?м\b', 'куб.' + NBSP + 'м', text, 'unit-kubm-normalize')
     return text
 
 
@@ -43,9 +50,10 @@ def fix_unit_names(text):
 # 2. Неразрывные пробелы между числом и единицей измерения
 # ---------------------------------------------------------------------------
 
-# порядок важен: составные единицы (кв. м) — раньше одиночной "м"
+# порядок важен: составные единицы (кв. м) — раньше одиночной "м".
+# Канон после fix_unit_names — с неразрывным пробелом внутри ("кв.<nbsp>м").
 UNITS_COMPOUND = [
-    r'кв\.\ м', r'куб\.\ м',
+    r'кв\.' + NBSP + r'м', r'куб\.' + NBSP + r'м',
 ]
 UNITS_SIMPLE = [
     r'мм', r'см', r'км', r'га',
@@ -58,9 +66,9 @@ UNITS_SIMPLE = [
 
 def fix_unit_spacing(text):
     for u in UNITS_COMPOUND:
-        # "25 кв. м" -> "25<nbsp>кв.<nbsp>м", также без пробела вовсе
-        text = _sub(r'(\d)[ \t]*(' + u + r')\b',
-                     lambda m: m.group(1) + NBSP + m.group(2).replace(' ', NBSP),
+        # "25 кв.<nbsp>м" -> "25<nbsp>кв.<nbsp>м" (внутренний nbsp уже есть)
+        text = _sub(r'(\d)[ \t ]*(' + u + r')\b',
+                     lambda m: m.group(1) + NBSP + m.group(2),
                      text, 'unit-compound-nbsp')
     for u in UNITS_SIMPLE:
         text = _sub(r'(\d)[ \t]*(' + u + r')',
@@ -92,6 +100,8 @@ def fix_common_abbrev(text):
 
 def fix_number_sign(text):
     text = _sub(r'№[ \t]*(?=\d)', '№' + NBSP, text, 'numsign-after')
+    # "№ исх." / "№ Вх" — неразрывный пробел между № и пометкой исходящий/входящий
+    text = _sub(r'№[ \t]+(?=(?:исх|вх)\b)', '№' + NBSP, text, 'numsign-ishvh', flags=re.IGNORECASE)
     # перед № — только если непосредственно слева есть непробельный символ (буква/скобка и т.п.)
     text = _sub(r'(?<=[^\s\u00A0(])[ \t]+(?=№)', NBSP, text, 'numsign-before')
     return text
@@ -156,7 +166,10 @@ def fix_codes_refs(text):
 REF_ABBR = ['рис', 'табл', 'стр', 'прил', 'гл', 'разд', 'абз', 'пп', 'с']
 
 def fix_ref_abbrev(text):
-    pat = r'\b(' + '|'.join(REF_ABBR) + r')\.[ \t]*(?=\d)'
+    # после сокращения — число ("табл. 3") ИЛИ одиночная заглавная буква-метка
+    # ("табл. В", "рис. А.1", приложения/таблицы с буквенной нумерацией).
+    # [А-ЯЁ]\b отсекает обычные слова ("см. табл. Ниже" — "Ниже" не одна буква).
+    pat = r'\b(' + '|'.join(REF_ABBR) + r')\.[ \t]*(?=\d|[А-ЯЁ]\b)'
     text = _sub(pat, lambda m: m.group(1) + '.' + NBSP, text, 'ref-abbrev')
     return text
 
@@ -235,6 +248,20 @@ def fix_zu_oks(text):
     text = _sub(r'\b(ЗУ|ОЗУ|ОКС|лист)[ \t]+(?=№)', lambda m: m.group(1) + NBSP, text, 'zu-oks-before-num')
     # напрямую перед числом, без № (лист 10, ЗУ 1 и т.п.)
     text = _sub(r'\b(ЗУ|ОЗУ|ОКС|лист)[ \t]+(?=\d)', lambda m: m.group(1) + NBSP, text, 'zu-oks-before-digit')
+    return text
+
+
+# ---------------------------------------------------------------------------
+# 8б. Объекты энергетики/инфраструктуры + номер: ПС 5, ТП №3, БКТП 12 и т.п.
+#     Длинные аббревиатуры — раньше коротких (иначе неважно: \b защищает от
+#     совпадения внутри слова, напр. "ПС" внутри "ОСПС").
+# ---------------------------------------------------------------------------
+
+POWER_ABBR = r'(?:БКРТП|БКТП|ОСПС|РТП|ГРП|АТС|ПС|ТП)'
+
+def fix_power_infra(text):
+    text = _sub(r'\b(' + POWER_ABBR + r')[ \t]+(?=№)', lambda m: m.group(1) + NBSP, text, 'power-before-num')
+    text = _sub(r'\b(' + POWER_ABBR + r')[ \t]+(?=\d)', lambda m: m.group(1) + NBSP, text, 'power-before-digit')
     return text
 
 
@@ -407,6 +434,7 @@ PIPELINE = [
     fix_project_codes,
     fix_abbrev_pairs,
     fix_zu_oks,
+    fix_power_infra,
     fix_ish_vh,
     fix_st_vd,
     fix_codes_refs,
