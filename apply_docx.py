@@ -36,7 +36,21 @@ def merge_runs_lxml(root):
     (абзаца или гиперссылки), объединяя их текст в один <w:t>.
     Не трогает runs, находящиеся в разных <w:ins>/<w:del> (они просто имеют
     разных родителей, поэтому не сливаются между собой — и это корректно).
+
+    ВАЖНО: сливаем только run'ы, у которых нет ДРУГИХ детей, кроме <w:rPr> и
+    одного <w:t>. Иначе при удалении второго run'а потеряются его прочие
+    дочерние элементы: <w:noBreakHyphen/> (неразрывный дефис в Санкт-Петербург,
+    д. 13-Б и т.п.), <w:tab/>, <w:br/>, <w:cr/>, <w:sym/>, картинки и др.
+    Именно так раньше пропадал дефис — он хранится как <w:noBreakHyphen/>, а не
+    как символ в тексте.
     """
+    def _only_rpr_and_one_t(r):
+        allowed = (qn('rPr'), qn('t'))
+        for child in r:
+            if child.tag not in allowed:
+                return False
+        return len(r.findall('w:t', NS)) == 1
+
     merged = 0
     for parent in root.iter():
         children = list(parent)
@@ -56,7 +70,8 @@ def merge_runs_lxml(root):
                 if xml_a == xml_b:
                     ts_a = a.findall('w:t', NS)
                     ts_b = b.findall('w:t', NS)
-                    if len(ts_a) == 1 and len(ts_b) == 1:
+                    if (len(ts_a) == 1 and len(ts_b) == 1
+                            and _only_rpr_and_one_t(a) and _only_rpr_and_one_t(b)):
                         combined = (ts_a[0].text or '') + (ts_b[0].text or '')
                         ts_a[0].text = combined
                         if combined != combined.strip() or combined == '':
