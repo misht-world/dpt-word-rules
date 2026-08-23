@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-GUI-обёртка над пайплайнами нормализации .docx (ПЗ от разных Исполнителей).
+GUI для работы с .docx (ПЗ от разных Исполнителей). Две вкладки:
 
-Задача: привести каждый Word-документ к единому стилю. Ничего не склеивает —
-каждый файл обрабатывается независимо.
+1. «Типографика» — приводит каждый документ к единому оформлению. Обёртка над
+   проверенным apply_docx.py (вызов через subprocess, CLI оттестирован).
+   «Структура» (normalize_structure.py) временно отключена — ломает документы,
+   дорабатывается отдельно; плечо do_struct в process_one сохранено.
 
-Ничего не переизобретает: вызывает уже проверенные скрипты как есть, через
-subprocess (их CLI оттестирован на реальных документах):
-    - normalize_structure.py — стили, списки, таблицы, поля, единая нумерация заголовков
-    - apply_docx.py          — типографика (неразрывные пробелы, дефисы, единицы)
+2. «Поиск и замена» — поиск слова/словосочетания во всех выбранных .docx (по
+   каталогам рекурсивно), просмотр найденного с контекстом, выбор отдельных
+   вхождений и замена. Логика — в find_replace.py (уровень текста абзаца, чтобы
+   находить фразы, разорванные на run'ы; замена через redistribute без потери
+   форматирования).
 
-Порядок при обоих включённых тумблерах: СТРУКТУРА -> ТИПОГРАФИКА.
-Причина: структура сначала "съедает" литеральные маркеры списков ("- ", "N) ")
-и номера заголовков, а типографика уже потом чистит текст. Если наоборот —
-типографика может превратить ведущий "- " в тире и сломать распознавание списков.
+Выбор источника (файлы/папки) и режим сохранения (копия рядом / на месте) —
+общие для обеих вкладок.
 
 Зависимости: только стандартная библиотека (tkinter входит в Python).
 Запуск:  python gui.py
@@ -29,12 +30,18 @@ import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+import find_replace as FR
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STRUCT_SCRIPT = os.path.join(SCRIPT_DIR, 'normalize_structure.py')
 TYPO_SCRIPT = os.path.join(SCRIPT_DIR, 'apply_docx.py')
 
 SUFFIX = '_normalized'          # суффикс выходного файла в режиме "копия рядом"
 DOCX_EXT = '.docx'
+
+CHECKED = '☑'
+UNCHECKED = '☐'
+PARTIAL = '◪'
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +92,7 @@ def output_path_for(input_path, in_place):
 
 
 # ---------------------------------------------------------------------------
-# Запуск дочернего скрипта
+# Запуск дочернего скрипта (типографика)
 # ---------------------------------------------------------------------------
 
 def _child_env():
@@ -119,7 +126,6 @@ def process_one(input_path, do_struct, do_typo, in_place, make_report, log):
     final_out = output_path_for(input_path, in_place)
     out_root, _ = os.path.splitext(final_out)
 
-    # Промежуточный файл нужен только когда включены ОБА этапа
     tmp_dir = None
     stages = []
     if do_struct and do_typo:
@@ -163,80 +169,148 @@ def process_one(input_path, do_struct, do_typo, in_place, make_report, log):
 class App:
     def __init__(self, root):
         self.root = root
-        root.title('ДПТ — нормализация Word (ПЗ)')
-        root.geometry('760x620')
-        root.minsize(640, 520)
+        root.title('ДПТ — обработка Word (ПЗ)')
+        root.geometry('860x720')
+        root.minsize(720, 600)
 
-        self.paths = []                 # выбранные файлы/папки (как выбрал пользователь)
-        self.msg_queue = queue.Queue()  # сообщения из рабочего потока в UI
-        self.worker = None
+        self.paths = []                 # выбранные файлы/папки
+        self.msg_queue = queue.Queue()  # сообщения из рабочих потоков в UI
+        self.busy = False
+
+        # состояние вкладки поиска/замены
+        self.fr_results = {}            # path -> [match dict]
+        self.fr_item_meta = {}          # tree item id -> meta
+        self.fr_query = ''
+        self.fr_match_case = False
 
         self._build_ui()
         self.root.after(100, self._drain_queue)
 
+    # ------------------------------------------------------------------ UI
     def _build_ui(self):
         pad = {'padx': 8, 'pady': 4}
 
-        # --- Источник ---
-        src = ttk.LabelFrame(self.root, text='1. Что обрабатываем')
+        # --- Общий источник ---
+        src = ttk.LabelFrame(self.root, text='Источник (общий для обеих вкладок)')
         src.pack(fill='x', **pad)
-
         btns = ttk.Frame(src)
         btns.pack(fill='x', padx=6, pady=6)
         ttk.Button(btns, text='Добавить файлы…', command=self.add_files).pack(side='left')
         ttk.Button(btns, text='Добавить папку…', command=self.add_folder).pack(side='left', padx=6)
         ttk.Button(btns, text='Убрать выбранное', command=self.remove_selected).pack(side='left')
         ttk.Button(btns, text='Очистить всё', command=self.clear_paths).pack(side='left', padx=6)
-
-        self.path_list = tk.Listbox(src, height=6, selectmode='extended')
+        self.path_list = tk.Listbox(src, height=5, selectmode='extended')
         self.path_list.pack(fill='x', padx=6, pady=(0, 4))
         ttk.Label(src, text='Папки обходятся рекурсивно (вместе со вложенными). '
                             'Временные ~$-файлы и уже готовые *_normalized пропускаются.',
                   foreground='#666').pack(anchor='w', padx=6, pady=(0, 6))
 
-        # --- Что применять ---
-        # Структура временно отключена: ломает документы, дорабатывается отдельно.
-        # Плечо do_struct в process_one сохранено — включить обратно = вернуть чекбокс.
-        what = ttk.LabelFrame(self.root, text='2. Что применять')
-        what.pack(fill='x', **pad)
+        # --- Общий режим сохранения ---
+        out = ttk.LabelFrame(self.root, text='Сохранение результата')
+        out.pack(fill='x', **pad)
+        self.var_inplace = tk.BooleanVar(value=False)
+        ttk.Radiobutton(out, text=f'Копия рядом  (файл{SUFFIX}.docx) — оригинал не трогаем',
+                        variable=self.var_inplace, value=False).pack(side='left', padx=8, pady=4)
+        ttk.Radiobutton(out, text='На месте (перезапись) — только с бэкапом!',
+                        variable=self.var_inplace, value=True).pack(side='left', padx=8, pady=4)
+
+        # --- Вкладки ---
+        nb = ttk.Notebook(self.root)
+        nb.pack(fill='both', expand=True, **pad)
+        self._build_typo_tab(nb)
+        self._build_fr_tab(nb)
+
+        # --- Общий прогресс ---
+        self.progress = ttk.Progressbar(self.root, mode='determinate')
+        self.progress.pack(fill='x', padx=8, pady=(0, 8))
+
+    def _build_typo_tab(self, nb):
+        tab = ttk.Frame(nb)
+        nb.add(tab, text='  Типографика  ')
+
+        what = ttk.LabelFrame(tab, text='Что применять')
+        what.pack(fill='x', padx=6, pady=6)
         self.var_struct = tk.BooleanVar(value=False)   # структура пока выключена
         self.var_typo = tk.BooleanVar(value=True)
         ttk.Checkbutton(what, text='Типографика  (неразрывные пробелы, дефисы, единицы измерения)',
                         variable=self.var_typo).pack(anchor='w', padx=8, pady=2)
         ttk.Label(what, text='Структура (стили, списки, таблицы, заголовки) временно отключена — '
                             'ломает документы, дорабатывается отдельно.',
-                  foreground='#a00').pack(anchor='w', padx=8, pady=(0, 6))
-
-        # --- Куда ---
-        out = ttk.LabelFrame(self.root, text='3. Результат')
-        out.pack(fill='x', **pad)
-        self.var_inplace = tk.BooleanVar(value=False)
-        ttk.Radiobutton(out, text=f'Копия рядом  (файл{SUFFIX}.docx) — оригинал не трогаем',
-                        variable=self.var_inplace, value=False).pack(anchor='w', padx=8, pady=2)
-        ttk.Radiobutton(out, text='На месте (перезапись оригинала) — только с бэкапом!',
-                        variable=self.var_inplace, value=True).pack(anchor='w', padx=8, pady=2)
+                  foreground='#a00').pack(anchor='w', padx=8, pady=(0, 4))
         self.var_report = tk.BooleanVar(value=True)
-        ttk.Checkbutton(out, text='Писать текстовый отчёт (report.txt рядом с результатом)',
-                        variable=self.var_report).pack(anchor='w', padx=8, pady=(6, 6))
+        ttk.Checkbutton(what, text='Писать текстовый отчёт (report.txt рядом с результатом)',
+                        variable=self.var_report).pack(anchor='w', padx=8, pady=(0, 6))
 
-        # --- Запуск ---
-        run = ttk.Frame(self.root)
-        run.pack(fill='x', **pad)
-        self.run_btn = ttk.Button(run, text='▶  Запустить', command=self.start)
-        self.run_btn.pack(side='left')
-        self.progress = ttk.Progressbar(run, mode='determinate')
-        self.progress.pack(side='left', fill='x', expand=True, padx=8)
+        row = ttk.Frame(tab)
+        row.pack(fill='x', padx=6, pady=4)
+        self.typo_btn = ttk.Button(row, text='▶  Запустить типографику', command=self.start_typo)
+        self.typo_btn.pack(side='left')
 
-        # --- Лог ---
-        logf = ttk.LabelFrame(self.root, text='Журнал')
-        logf.pack(fill='both', expand=True, **pad)
+        logf = ttk.LabelFrame(tab, text='Журнал')
+        logf.pack(fill='both', expand=True, padx=6, pady=6)
         self.log_text = tk.Text(logf, height=10, wrap='word', state='disabled')
         self.log_text.pack(side='left', fill='both', expand=True, padx=(6, 0), pady=6)
         sb = ttk.Scrollbar(logf, command=self.log_text.yview)
         sb.pack(side='right', fill='y', pady=6)
         self.log_text['yscrollcommand'] = sb.set
 
-    # --- работа со списком путей ---
+    def _build_fr_tab(self, nb):
+        tab = ttk.Frame(nb)
+        nb.add(tab, text='  Поиск и замена  ')
+
+        # строка поиска
+        top = ttk.Frame(tab)
+        top.pack(fill='x', padx=6, pady=6)
+        ttk.Label(top, text='Найти:').pack(side='left')
+        self.fr_find = ttk.Entry(top, width=34)
+        self.fr_find.pack(side='left', padx=6)
+        self.fr_case = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text='Учитывать регистр', variable=self.fr_case).pack(side='left', padx=6)
+        self.fr_find_btn = ttk.Button(top, text='🔍  Найти', command=self.start_scan)
+        self.fr_find_btn.pack(side='left', padx=6)
+
+        # результаты
+        mid = ttk.LabelFrame(tab, text='Результаты (отметьте, что заменять; клик по флажку)')
+        mid.pack(fill='both', expand=True, padx=6, pady=4)
+        selrow = ttk.Frame(mid)
+        selrow.pack(fill='x', padx=6, pady=(6, 0))
+        ttk.Button(selrow, text='Отметить все', command=lambda: self._fr_set_all(True)).pack(side='left')
+        ttk.Button(selrow, text='Снять все', command=lambda: self._fr_set_all(False)).pack(side='left', padx=6)
+        self.fr_count = ttk.Label(selrow, text='Ничего не искали', foreground='#666')
+        self.fr_count.pack(side='left', padx=12)
+
+        treef = ttk.Frame(mid)
+        treef.pack(fill='both', expand=True, padx=6, pady=6)
+        self.fr_tree = ttk.Treeview(treef, columns=('chk',), show='tree headings', selectmode='none')
+        self.fr_tree.heading('#0', text='Документ / контекст (⟦…⟧ — найденное)')
+        self.fr_tree.heading('chk', text='Заменять')
+        self.fr_tree.column('#0', width=560, stretch=True)
+        self.fr_tree.column('chk', width=80, anchor='center', stretch=False)
+        self.fr_tree.pack(side='left', fill='both', expand=True)
+        tsb = ttk.Scrollbar(treef, command=self.fr_tree.yview)
+        tsb.pack(side='right', fill='y')
+        self.fr_tree['yscrollcommand'] = tsb.set
+        self.fr_tree.bind('<Button-1>', self._fr_click)
+
+        # строка замены
+        bot = ttk.Frame(tab)
+        bot.pack(fill='x', padx=6, pady=6)
+        ttk.Label(bot, text='Заменить на:').pack(side='left')
+        self.fr_repl = ttk.Entry(bot, width=34)
+        self.fr_repl.pack(side='left', padx=6)
+        self.fr_repl_btn = ttk.Button(bot, text='Заменить отмеченное', command=self.start_replace)
+        self.fr_repl_btn.pack(side='left', padx=6)
+        self.fr_repl_btn['state'] = 'disabled'
+
+        logf = ttk.LabelFrame(tab, text='Журнал')
+        logf.pack(fill='x', padx=6, pady=(0, 6))
+        self.fr_log = tk.Text(logf, height=5, wrap='word', state='disabled')
+        self.fr_log.pack(side='left', fill='both', expand=True, padx=(6, 0), pady=6)
+        fsb = ttk.Scrollbar(logf, command=self.fr_log.yview)
+        fsb.pack(side='right', fill='y', pady=6)
+        self.fr_log['yscrollcommand'] = fsb.set
+
+    # ------------------------------------------------------- источник (общий)
     def _refresh_list(self):
         self.path_list.delete(0, 'end')
         for p in self.paths:
@@ -267,73 +341,88 @@ class App:
         self.paths = []
         self._refresh_list()
 
-    # --- лог ---
+    # ------------------------------------------------------------- очередь/лог
+    def _log_to(self, widget, msg):
+        widget['state'] = 'normal'
+        widget.insert('end', msg + '\n')
+        widget.see('end')
+        widget['state'] = 'disabled'
+
     def log(self, msg):
         self.msg_queue.put(('log', msg))
+
+    def fr_log_msg(self, msg):
+        self.msg_queue.put(('fr_log', msg))
 
     def _drain_queue(self):
         try:
             while True:
                 kind, payload = self.msg_queue.get_nowait()
                 if kind == 'log':
-                    self.log_text['state'] = 'normal'
-                    self.log_text.insert('end', payload + '\n')
-                    self.log_text.see('end')
-                    self.log_text['state'] = 'disabled'
+                    self._log_to(self.log_text, payload)
+                elif kind == 'fr_log':
+                    self._log_to(self.fr_log, payload)
                 elif kind == 'progress':
                     done, total = payload
-                    self.progress['maximum'] = total
+                    self.progress['maximum'] = max(total, 1)
                     self.progress['value'] = done
+                elif kind == 'fr_results':
+                    self.fr_query, self.fr_match_case, self.fr_results = payload
+                    self._fr_populate()
+                    self._set_busy(False)
                 elif kind == 'done':
-                    self.run_btn['state'] = 'normal'
+                    self._set_busy(False)
+                elif kind == 'fr_done':
+                    self._set_busy(False)
         except queue.Empty:
             pass
         self.root.after(100, self._drain_queue)
 
-    # --- запуск ---
-    def start(self):
-        if self.worker and self.worker.is_alive():
+    def _set_busy(self, busy):
+        self.busy = busy
+        state = 'disabled' if busy else 'normal'
+        self.typo_btn['state'] = state
+        self.fr_find_btn['state'] = state
+        # кнопка замены активна только когда есть результаты и мы не заняты
+        if busy:
+            self.fr_repl_btn['state'] = 'disabled'
+        elif self.fr_results:
+            self.fr_repl_btn['state'] = 'normal'
+
+    # --------------------------------------------------------- типографика
+    def start_typo(self):
+        if self.busy:
             return
-        do_struct = self.var_struct.get()
         do_typo = self.var_typo.get()
-        if not (do_struct or do_typo):
-            messagebox.showwarning('Нечего делать', 'Включите хотя бы один тумблер: структура или типографика.')
+        if not do_typo:
+            messagebox.showwarning('Нечего делать', 'Включите тумблер «Типографика».')
             return
         if not self.paths:
             messagebox.showwarning('Нет входных данных', 'Добавьте файлы или папку.')
             return
-
         files = collect_docx(self.paths)
         if not files:
             messagebox.showinfo('Пусто', 'В выбранных путях не найдено подходящих .docx.')
             return
+        in_place = self.var_inplace.get()
+        if in_place and not messagebox.askyesno(
+                'Перезапись оригиналов',
+                f'Будут ПЕРЕЗАПИСАНЫ {len(files)} исходных файлов.\n'
+                'Убедитесь, что есть бэкап. Продолжить?'):
+            return
 
-        if self.var_inplace.get():
-            if not messagebox.askyesno(
-                    'Перезапись оригиналов',
-                    f'Будут ПЕРЕЗАПИСАНЫ {len(files)} исходных файлов.\n'
-                    'Убедитесь, что есть бэкап. Продолжить?'):
-                return
+        self._set_busy(True)
+        self._clear_text(self.log_text)
+        args = (files, False, do_typo, in_place, self.var_report.get())
+        threading.Thread(target=self._run_typo, args=args, daemon=True).start()
 
-        self.run_btn['state'] = 'disabled'
-        self.log_text['state'] = 'normal'
-        self.log_text.delete('1.0', 'end')
-        self.log_text['state'] = 'disabled'
-
-        args = (files, do_struct, do_typo, self.var_inplace.get(), self.var_report.get())
-        self.worker = threading.Thread(target=self._run_batch, args=args, daemon=True)
-        self.worker.start()
-
-    def _run_batch(self, files, do_struct, do_typo, in_place, make_report):
+    def _run_typo(self, files, do_struct, do_typo, in_place, make_report):
         total = len(files)
-        stages = ' + '.join([s for s, on in (('структура', do_struct), ('типографика', do_typo)) if on])
         mode = 'перезапись на месте' if in_place else f'копия ({SUFFIX})'
-        self.log(f'Файлов к обработке: {total}   |   этапы: {stages}   |   выход: {mode}')
+        self.log(f'Файлов: {total}   |   этап: типографика   |   выход: {mode}')
         self.log('=' * 70)
         self.msg_queue.put(('progress', (0, total)))
-
-        ok_count = 0
-        err_count = 0
+        ok_count = err_count = 0
         for i, f in enumerate(files, 1):
             self.log(f'[{i}/{total}] {f}')
             try:
@@ -347,10 +436,168 @@ class App:
             else:
                 err_count += 1
             self.msg_queue.put(('progress', (i, total)))
-
         self.log('=' * 70)
         self.log(f'Готово. Успешно: {ok_count}, с ошибками: {err_count}.')
         self.msg_queue.put(('done', None))
+
+    # ------------------------------------------------------- поиск и замена
+    def _clear_text(self, widget):
+        widget['state'] = 'normal'
+        widget.delete('1.0', 'end')
+        widget['state'] = 'disabled'
+
+    def start_scan(self):
+        if self.busy:
+            return
+        query = self.fr_find.get()
+        if not query:
+            messagebox.showwarning('Пустой запрос', 'Введите слово или словосочетание для поиска.')
+            return
+        if not self.paths:
+            messagebox.showwarning('Нет входных данных', 'Добавьте файлы или папку.')
+            return
+        files = collect_docx(self.paths)
+        if not files:
+            messagebox.showinfo('Пусто', 'В выбранных путях не найдено подходящих .docx.')
+            return
+
+        self._set_busy(True)
+        self._clear_text(self.fr_log)
+        self.fr_tree.delete(*self.fr_tree.get_children())
+        self.fr_results = {}
+        self.fr_count['text'] = 'Идёт поиск…'
+        self.fr_log_msg(f'Поиск «{query}» в {len(files)} файлах '
+                        f'({"с учётом" if self.fr_case.get() else "без учёта"} регистра)…')
+        args = (files, query, self.fr_case.get())
+        threading.Thread(target=self._run_scan, args=args, daemon=True).start()
+
+    def _run_scan(self, files, query, match_case):
+        total = len(files)
+        self.msg_queue.put(('progress', (0, total)))
+        results = {}
+        for i, f in enumerate(files, 1):
+            try:
+                m = FR.scan_file(f, query, match_case)
+            except Exception:
+                m = []
+                self.fr_log_msg(f'[ОШИБКА чтения] {f}')
+            if m:
+                results[f] = m
+            self.msg_queue.put(('progress', (i, total)))
+        self.msg_queue.put(('fr_results', (query, match_case, results)))
+
+    def _fr_populate(self):
+        tree = self.fr_tree
+        tree.delete(*tree.get_children())
+        self.fr_item_meta = {}
+        total = 0
+        for path, matches in self.fr_results.items():
+            doc_id = tree.insert('', 'end', text=f'📄 {os.path.basename(path)}  ({len(matches)})',
+                                 values=(CHECKED,), open=True)
+            self.fr_item_meta[doc_id] = {'type': 'doc', 'path': path}
+            for md in matches:
+                ctx = (md['before'] + '⟦' + md['match'] + '⟧' + md['after']).replace('\n', ' ').replace('\r', ' ')
+                cid = tree.insert(doc_id, 'end', text='    ' + ctx, values=(CHECKED,))
+                self.fr_item_meta[cid] = {'type': 'match', 'path': path,
+                                          'para_idx': md['para_idx'], 'occ_idx': md['occ_idx'],
+                                          'checked': True}
+                total += 1
+        if total:
+            self.fr_count['text'] = f'Найдено вхождений: {total} в {len(self.fr_results)} документах'
+            self.fr_log_msg(f'Найдено: {total} вхождений в {len(self.fr_results)} документах.')
+        else:
+            self.fr_count['text'] = 'Ничего не найдено'
+            self.fr_log_msg('Ничего не найдено.')
+
+    def _fr_click(self, event):
+        tree = self.fr_tree
+        if tree.identify('region', event.x, event.y) not in ('tree', 'cell'):
+            return
+        if tree.identify_column(event.x) != '#1':   # реагируем только на колонку-флажок
+            return
+        row = tree.identify_row(event.y)
+        meta = self.fr_item_meta.get(row)
+        if not meta:
+            return
+        if meta['type'] == 'doc':
+            kids = tree.get_children(row)
+            new_state = not all(self.fr_item_meta[k]['checked'] for k in kids)
+            for k in kids:
+                self.fr_item_meta[k]['checked'] = new_state
+                tree.set(k, 'chk', CHECKED if new_state else UNCHECKED)
+            tree.set(row, 'chk', CHECKED if new_state else UNCHECKED)
+        else:
+            meta['checked'] = not meta['checked']
+            tree.set(row, 'chk', CHECKED if meta['checked'] else UNCHECKED)
+            self._fr_refresh_doc(tree.parent(row))
+
+    def _fr_refresh_doc(self, doc_id):
+        tree = self.fr_tree
+        states = [self.fr_item_meta[k]['checked'] for k in tree.get_children(doc_id)]
+        if states and all(states):
+            tree.set(doc_id, 'chk', CHECKED)
+        elif not any(states):
+            tree.set(doc_id, 'chk', UNCHECKED)
+        else:
+            tree.set(doc_id, 'chk', PARTIAL)
+
+    def _fr_set_all(self, state):
+        tree = self.fr_tree
+        for item_id, meta in self.fr_item_meta.items():
+            if meta['type'] == 'match':
+                meta['checked'] = state
+            tree.set(item_id, 'chk', CHECKED if state else UNCHECKED)
+
+    def _fr_selected_by_file(self):
+        """{path: {para_idx: set(occ_idx)}} по отмеченным совпадениям."""
+        sel = {}
+        for meta in self.fr_item_meta.values():
+            if meta['type'] == 'match' and meta['checked']:
+                sel.setdefault(meta['path'], {}).setdefault(meta['para_idx'], set()).add(meta['occ_idx'])
+        return sel
+
+    def start_replace(self):
+        if self.busy or not self.fr_results:
+            return
+        replacement = self.fr_repl.get()
+        selected = self._fr_selected_by_file()
+        if not selected:
+            messagebox.showinfo('Ничего не отмечено', 'Отметьте хотя бы одно вхождение для замены.')
+            return
+        total_occ = sum(len(occ) for paras in selected.values() for occ in paras.values())
+        in_place = self.var_inplace.get()
+        where = 'ПЕРЕЗАПИШЕТ оригиналы' if in_place else f'сохранит копии ({SUFFIX})'
+        if not messagebox.askyesno(
+                'Подтверждение замены',
+                f'Заменить «{self.fr_query}» → «{replacement}»\n'
+                f'в {total_occ} вхождениях ({len(selected)} файлов).\n'
+                f'Операция {where}. Продолжить?'):
+            return
+
+        self._set_busy(True)
+        args = (self.fr_query, replacement, self.fr_match_case, in_place, selected)
+        threading.Thread(target=self._run_replace, args=args, daemon=True).start()
+
+    def _run_replace(self, query, replacement, match_case, in_place, selected):
+        total = len(selected)
+        self.fr_log_msg('=' * 60)
+        self.fr_log_msg(f'Замена «{query}» → «{replacement}» в {total} файлах…')
+        self.msg_queue.put(('progress', (0, total)))
+        done = made = errs = 0
+        for path, sel in selected.items():
+            out = output_path_for(path, in_place)
+            try:
+                n = FR.replace_file(path, out, query, replacement, match_case, sel)
+                made += n
+                self.fr_log_msg(f'✓ {n} замен: {out}')
+            except Exception:
+                errs += 1
+                self.fr_log_msg(f'[ОШИБКА] {path}: ' + traceback.format_exc().splitlines()[-1])
+            done += 1
+            self.msg_queue.put(('progress', (done, total)))
+        self.fr_log_msg('=' * 60)
+        self.fr_log_msg(f'Готово. Заменено вхождений: {made}, файлов: {done}, ошибок: {errs}.')
+        self.msg_queue.put(('fr_done', None))
 
 
 def main():
