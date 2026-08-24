@@ -204,8 +204,8 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title('ДПТ — обработка Word (ПЗ)')
-        root.geometry('860x720')
-        root.minsize(720, 600)
+        root.geometry('960x800')
+        root.minsize(760, 620)
 
         self.paths = []                 # выбранные файлы/папки
         self.msg_queue = queue.Queue()  # сообщения из рабочих потоков в UI
@@ -364,22 +364,46 @@ class App:
         tab = ttk.Frame(nb)
         nb.add(tab, text='  Поиск и замена  ')
 
-        # строка поиска
-        top = ttk.Frame(tab)
-        top.pack(fill='x', padx=6, pady=6)
-        ttk.Label(top, text='Найти:').pack(side='left')
-        self.fr_find = ttk.Entry(top, width=34)
-        self.fr_find.pack(side='left', padx=6)
-        self.fr_case = tk.BooleanVar(value=False)
-        ttk.Checkbutton(top, text='Учитывать регистр', variable=self.fr_case).pack(side='left', padx=6)
-        self.fr_partial = tk.BooleanVar(value=False)
-        ttk.Checkbutton(top, text='Часть слова', variable=self.fr_partial).pack(side='left', padx=6)
-        self.fr_flex = tk.BooleanVar(value=True)
-        ttk.Checkbutton(top, text='Пробел/дефис любой', variable=self.fr_flex).pack(side='left', padx=6)
-        self.fr_find_btn = ttk.Button(top, text='🔍  Найти', command=self.start_scan)
-        self.fr_find_btn.pack(side='left', padx=6)
+        # --- форма: «Найти» и «Заменить на» друг под другом, одной ширины ---
+        form = ttk.LabelFrame(tab, text='Поиск и замена')
+        form.pack(fill='x', padx=6, pady=6)
+        form.columnconfigure(1, weight=1)   # поля ввода растягиваются по ширине окна
 
-        # результаты
+        ttk.Label(form, text='Найти:').grid(row=0, column=0, sticky='w', padx=6, pady=(6, 2))
+        self.fr_find = ttk.Entry(form)
+        self.fr_find.grid(row=0, column=1, sticky='ew', padx=6, pady=(6, 2))
+
+        ttk.Label(form, text='Заменить на:').grid(row=1, column=0, sticky='w', padx=6, pady=2)
+        self.fr_repl = ttk.Entry(form)
+        self.fr_repl.grid(row=1, column=1, sticky='ew', padx=6, pady=2)
+
+        ins = ttk.Frame(form)
+        ins.grid(row=2, column=1, sticky='w', padx=6, pady=(0, 2))
+        ttk.Button(ins, text='+нб.пробел', width=11,
+                   command=lambda: self._insert_char(self.fr_repl, '\xa0')).pack(side='left')
+        ttk.Button(ins, text='+нб.дефис', width=10,
+                   command=lambda: self._insert_char(self.fr_repl, '‑')).pack(side='left', padx=3)
+        ttk.Label(ins, text='(пусто = удалить найденное)', foreground='#666').pack(side='left', padx=8)
+
+        opts = ttk.Frame(form)
+        opts.grid(row=3, column=1, sticky='w', padx=6, pady=2)
+        self.fr_case = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text='Учитывать регистр', variable=self.fr_case).pack(side='left')
+        self.fr_partial = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text='Часть слова', variable=self.fr_partial).pack(side='left', padx=10)
+        self.fr_flex = tk.BooleanVar(value=True)
+        ttk.Checkbutton(opts, text='Пробел/дефис любой', variable=self.fr_flex).pack(side='left')
+
+        act = ttk.Frame(form)
+        act.grid(row=4, column=1, sticky='w', padx=6, pady=(4, 8))
+        self.fr_find_btn = ttk.Button(act, text='🔍  Найти', command=self.start_scan)
+        self.fr_find_btn.pack(side='left')
+        self.fr_repl_btn = ttk.Button(act, text='Заменить отмеченное', command=self.start_replace)
+        self.fr_repl_btn.pack(side='left', padx=6)
+        self.fr_repl_btn['state'] = 'disabled'
+        ttk.Button(act, text='Очистить', command=self.fr_clear).pack(side='left')
+
+        # --- результаты (занимают всё оставшееся место) ---
         mid = ttk.LabelFrame(tab, text='Результаты (отметьте, что заменять; клик по флажку)')
         mid.pack(fill='both', expand=True, padx=6, pady=4)
         selrow = ttk.Frame(mid)
@@ -394,7 +418,7 @@ class App:
         self.fr_tree = ttk.Treeview(treef, columns=('chk',), show='tree headings', selectmode='none')
         self.fr_tree.heading('#0', text='Документ / контекст (⟦…⟧ — найденное)')
         self.fr_tree.heading('chk', text='Заменять')
-        self.fr_tree.column('#0', width=560, stretch=True)
+        self.fr_tree.column('#0', width=680, stretch=True)
         self.fr_tree.column('chk', width=80, anchor='center', stretch=False)
         self.fr_tree.pack(side='left', fill='both', expand=True)
         tsb = ttk.Scrollbar(treef, command=self.fr_tree.yview)
@@ -402,24 +426,10 @@ class App:
         self.fr_tree['yscrollcommand'] = tsb.set
         self.fr_tree.bind('<Button-1>', self._fr_click)
 
-        # строка замены
-        bot = ttk.Frame(tab)
-        bot.pack(fill='x', padx=6, pady=6)
-        ttk.Label(bot, text='Заменить на:').pack(side='left')
-        self.fr_repl = ttk.Entry(bot, width=28)
-        self.fr_repl.pack(side='left', padx=6)
-        ttk.Button(bot, text='+нб.пробел', width=11,
-                   command=lambda: self._insert_char(self.fr_repl, ' ')).pack(side='left')
-        ttk.Button(bot, text='+нб.дефис', width=10,
-                   command=lambda: self._insert_char(self.fr_repl, '‑')).pack(side='left', padx=3)
-        self.fr_repl_btn = ttk.Button(bot, text='Заменить отмеченное', command=self.start_replace)
-        self.fr_repl_btn.pack(side='left', padx=6)
-        self.fr_repl_btn['state'] = 'disabled'
-        ttk.Label(bot, text='(пусто = удалить)', foreground='#666').pack(side='left', padx=4)
-
+        # --- журнал (компактный) ---
         logf = ttk.LabelFrame(tab, text='Журнал')
         logf.pack(fill='x', padx=6, pady=(0, 6))
-        self.fr_log = tk.Text(logf, height=5, wrap='word', state='disabled')
+        self.fr_log = tk.Text(logf, height=4, wrap='word', state='disabled')
         self.fr_log.pack(side='left', fill='both', expand=True, padx=(6, 0), pady=6)
         fsb = ttk.Scrollbar(logf, command=self.fr_log.yview)
         fsb.pack(side='right', fill='y', pady=6)
@@ -506,6 +516,19 @@ class App:
         пробела/дефиса, которые с клавиатуры не набрать)."""
         entry.insert('insert', ch)
         entry.focus_set()
+
+    def fr_clear(self):
+        """Очищает поля поиска/замены, результаты и журнал вкладки."""
+        if self.busy:
+            return
+        self.fr_find.delete(0, 'end')
+        self.fr_repl.delete(0, 'end')
+        self.fr_tree.delete(*self.fr_tree.get_children())
+        self.fr_item_meta = {}
+        self.fr_results = {}
+        self.fr_count['text'] = 'Ничего не искали'
+        self._clear_text(self.fr_log)
+        self.fr_repl_btn['state'] = 'disabled'
 
     # ------------------------------------------------------------- очередь/лог
     def _log_to(self, widget, msg):
