@@ -58,7 +58,7 @@ UNITS_COMPOUND = [
 UNITS_SIMPLE = [
     r'мм', r'см', r'км', r'га',
     r'л/с', r'кВт', r'кВА', r'кВ',
-    r'Гкал/ч(?:ас)?', r'т/сут', r'чел\.',
+    r'Гкал/ч(?:ас)?', r'т/сут', r'тонн', r'прив\.\ ?ед\.', r'чел\.',
     r'руб\.', r'°C',
     r'м(?![а-яёА-ЯЁa-zA-Z])',  # "м" не часть другого слова/единицы
     r'%',
@@ -103,7 +103,7 @@ def fix_number_sign(text):
     # "№ исх." / "№ Вх" — неразрывный пробел между № и пометкой исходящий/входящий
     text = _sub(r'№[ \t]+(?=(?:исх|вх)\b)', '№' + NBSP, text, 'numsign-ishvh', flags=re.IGNORECASE)
     # перед № — только если непосредственно слева есть непробельный символ (буква/скобка и т.п.)
-    text = _sub(r'(?<=[^\s\u00A0(])[ \t]+(?=№)', NBSP, text, 'numsign-before')
+    text = _sub(r'(?<=[^\s\u00A0(«»"„“”])[ \t]+(?=№)', NBSP, text, 'numsign-before')
     return text
 
 
@@ -268,11 +268,21 @@ def fix_zu_oks(text):
 #     совпадения внутри слова, напр. "ПС" внутри "ОСПС").
 # ---------------------------------------------------------------------------
 
-POWER_ABBR = r'(?:БКРТП|БКТП|ОСПС|РТП|ГРП|АТС|ПС|ТП)'
+POWER_ABBR = r'(?:БКРТП|БКТП|ОСПС|РТП|ГРП|АТС|КЛ|ВЛ|ПС|ТП)'
 
 def fix_power_infra(text):
     text = _sub(r'\b(' + POWER_ABBR + r')[ \t]+(?=№)', lambda m: m.group(1) + NBSP, text, 'power-before-num')
     text = _sub(r'\b(' + POWER_ABBR + r')[ \t]+(?=\d)', lambda m: m.group(1) + NBSP, text, 'power-before-digit')
+    return text
+
+
+# ---------------------------------------------------------------------------
+# 8в. "код" (и склонения) + номер -> неразрывный пробел: "код 12.0.1".
+# ---------------------------------------------------------------------------
+
+def fix_kod(text):
+    text = _sub(r'\bкод(?:а|у|ом|е)?[ \t]+(?=\d)',
+                lambda m: m.group(0).rstrip() + NBSP, text, 'kod-num')
     return text
 
 
@@ -305,7 +315,7 @@ def fix_org_names(text):
     def repl(m):
         form = m.group(1)
         inner = m.group(2)
-        inner_nbsp = re.sub(r'[ \t]+', NBSP, inner)
+        inner_nbsp = inner  # пробелы внутри кавычек оставляем обычными
         LOG.append(('org-name', m.start(), m.group(0), form + NBSP + '«' + inner_nbsp + '»'))
         return form + NBSP + '«' + inner_nbsp + '»'
     text = re.sub(r'\b(' + FORMS + r')[ \t]+«([^»]*)»', repl, text)
@@ -435,6 +445,16 @@ def fix_spaces(text):
 # Сборка конвейера. ВАЖНО: порядок важен.
 # ---------------------------------------------------------------------------
 
+def fix_org_inner_clean(text):
+    """Финальный проход: внутри кавычек орг-названий убираем неразрывные ПРОБЕЛЫ
+    (которые мог добавить fix_prepositions, напр. после «и»), возвращая обычные.
+    Неразрывный дефис (Санкт-Петербург) не трогаем. Между формой и « — nbsp."""
+    def repl(m):
+        form, inner = m.group(1), m.group(2)
+        return form + NBSP + '«' + inner.replace(NBSP, ' ') + '»'
+    return re.sub(r'\b(' + FORMS + r')[ \t\u00A0]+«([^»]*)»', repl, text)
+
+
 PIPELINE = [
     fix_unit_names,       # сначала унификация м2/м3 -> слова
     fix_spaces,           # чистка пробелов до контекстных правил
@@ -446,6 +466,7 @@ PIPELINE = [
     fix_abbrev_pairs,
     fix_zu_oks,
     fix_power_infra,
+    fix_kod,
     fix_ish_vh,
     fix_st_vd,
     fix_codes_refs,
@@ -463,6 +484,7 @@ PIPELINE = [
     fix_unit_spacing,
     fix_dashes,
     fix_prepositions,     # самое общее правило — последним, чтобы не мешать более специфичным
+    fix_org_inner_clean,  # финально: чистим неразрывные пробелы внутри кавычек орг-названий
 ]
 
 
