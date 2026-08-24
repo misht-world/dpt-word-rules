@@ -21,6 +21,7 @@ GUI для работы с .docx (ПЗ от разных Исполнителе�
 """
 import os
 import sys
+import json
 import queue
 import threading
 import subprocess
@@ -28,7 +29,7 @@ import tempfile
 import traceback
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 import find_replace as FR
 import doc_convert as DC
@@ -36,6 +37,11 @@ import doc_convert as DC
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STRUCT_SCRIPT = os.path.join(SCRIPT_DIR, 'normalize_structure.py')
 TYPO_SCRIPT = os.path.join(SCRIPT_DIR, 'apply_docx.py')
+
+# Сохранённые наборы путей и последний выбор — вне репозитория (в профиле
+# пользователя), чтобы не коммитить и не терять между запусками.
+CONFIG_DIR = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'dpt-word-rules')
+PRESETS_PATH = os.path.join(CONFIG_DIR, 'presets.json')
 
 SUFFIX = '_normalized'          # суффикс выходного файла в режиме "копия рядом"
 DOCX_EXT = '.docx'
@@ -204,6 +210,7 @@ class App:
         self.paths = []                 # выбранные файлы/папки
         self.msg_queue = queue.Queue()  # сообщения из рабочих потоков в UI
         self.busy = False
+        self.store = self._load_store()  # наборы путей + последний выбор
 
         # состояние вкладки поиска/замены
         self.fr_results = {}            # path -> [match dict]
@@ -213,10 +220,38 @@ class App:
         self.fr_whole_word = True
 
         self._build_ui()
+        # восстановить последний выбор путей
+        self.paths = [p for p in self.store.get('last', []) if isinstance(p, str)]
+        self._refresh_list()
         # Ctrl+C/V/X/A на русской раскладке (Ctrl шлёт кириллические клавиши,
         # для которых нет стандартных биндов копирования/вставки).
         self.root.bind_all('<Control-KeyPress>', self._ctrl_key)
         self.root.after(100, self._drain_queue)
+
+    # ------------------------------------------------------------ хранилище
+    def _load_store(self):
+        try:
+            with open(PRESETS_PATH, encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                data.setdefault('presets', {})
+                data.setdefault('last', [])
+                return data
+        except Exception:
+            pass
+        return {'presets': {}, 'last': []}
+
+    def _save_store(self):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(PRESETS_PATH, 'w', encoding='utf-8') as f:
+                json.dump(self.store, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _persist_last(self):
+        self.store['last'] = list(self.paths)
+        self._save_store()
 
     def _ctrl_key(self, event):
         """Копирование/вставка/вырезание/выделение при русской раскладке.
@@ -263,7 +298,17 @@ class App:
         self.path_list.pack(fill='x', padx=6, pady=(0, 4))
         ttk.Label(src, text='Папки обходятся рекурсивно (вместе со вложенными). '
                             'Временные ~$-файлы и уже готовые *_normalized пропускаются.',
-                  foreground='#666').pack(anchor='w', padx=6, pady=(0, 6))
+                  foreground='#666').pack(anchor='w', padx=6, pady=(0, 4))
+
+        prow = ttk.Frame(src)
+        prow.pack(fill='x', padx=6, pady=(0, 6))
+        ttk.Label(prow, text='Наборы:').pack(side='left')
+        self.preset_combo = ttk.Combobox(prow, state='readonly', width=26)
+        self.preset_combo.pack(side='left', padx=6)
+        ttk.Button(prow, text='Загрузить', command=self.load_preset).pack(side='left')
+        ttk.Button(prow, text='Сохранить как…', command=self.save_preset).pack(side='left', padx=6)
+        ttk.Button(prow, text='Удалить', command=self.delete_preset).pack(side='left')
+        self._refresh_presets()
 
         # --- Общий режим сохранения ---
         out = ttk.LabelFrame(self.root, text='Сохранение результата')
@@ -381,27 +426,72 @@ class App:
 
     def add_files(self):
         files = filedialog.askopenfilenames(
-            title='Выберите .docx',
-            filetypes=[('Word', '*.docx'), ('Все файлы', '*.*')])
+            title='Выберите .docx / .doc',
+            filetypes=[('Word', '*.docx *.doc'), ('Все файлы', '*.*')])
         for f in files:
             if f not in self.paths:
                 self.paths.append(f)
         self._refresh_list()
+        self._persist_last()
 
     def add_folder(self):
-        d = filedialog.askdirectory(title='Выберите папку (обрабатываются все .docx внутри)')
+        d = filedialog.askdirectory(title='Выберите папку (обрабатываются все .docx/.doc внутри)')
         if d and d not in self.paths:
             self.paths.append(d)
         self._refresh_list()
+        self._persist_last()
 
     def remove_selected(self):
         for i in reversed(self.path_list.curselection()):
             del self.paths[i]
         self._refresh_list()
+        self._persist_last()
 
     def clear_paths(self):
         self.paths = []
         self._refresh_list()
+        self._persist_last()
+
+    # ---- именованные наборы путей ----
+    def _refresh_presets(self):
+        names = sorted(self.store.get('presets', {}).keys())
+        self.preset_combo['values'] = names
+        if self.preset_combo.get() not in names:
+            self.preset_combo.set('')
+
+    def save_preset(self):
+        if not self.paths:
+            messagebox.showinfo('Пусто', 'Сначала добавьте файлы или папки.')
+            return
+        name = simpledialog.askstring('Сохранить набор', 'Название набора:', parent=self.root)
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        if name in self.store['presets'] and not messagebox.askyesno(
+                'Перезаписать', f'Набор «{name}» уже существует. Перезаписать?'):
+            return
+        self.store['presets'][name] = list(self.paths)
+        self._save_store()
+        self._refresh_presets()
+        self.preset_combo.set(name)
+
+    def load_preset(self):
+        name = self.preset_combo.get()
+        if not name or name not in self.store.get('presets', {}):
+            messagebox.showinfo('Нет набора', 'Выберите сохранённый набор из списка.')
+            return
+        self.paths = list(self.store['presets'][name])
+        self._refresh_list()
+        self._persist_last()
+
+    def delete_preset(self):
+        name = self.preset_combo.get()
+        if not name or name not in self.store.get('presets', {}):
+            return
+        if messagebox.askyesno('Удалить набор', f'Удалить набор «{name}»?'):
+            del self.store['presets'][name]
+            self._save_store()
+            self._refresh_presets()
 
     # ------------------------------------------------------------- очередь/лог
     def _log_to(self, widget, msg):
