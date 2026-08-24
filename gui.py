@@ -268,7 +268,7 @@ class App:
         # --- Общий режим сохранения ---
         out = ttk.LabelFrame(self.root, text='Сохранение результата')
         out.pack(fill='x', **pad)
-        self.var_inplace = tk.BooleanVar(value=False)
+        self.var_inplace = tk.BooleanVar(value=True)
         ttk.Radiobutton(out, text=f'Копия рядом  (файл{SUFFIX}.docx) — оригинал не трогаем',
                         variable=self.var_inplace, value=False).pack(side='left', padx=8, pady=4)
         ttk.Radiobutton(out, text='На месте (перезапись) — только с бэкапом!',
@@ -297,7 +297,7 @@ class App:
         ttk.Label(what, text='Структура (стили, списки, таблицы, заголовки) временно отключена — '
                             'ломает документы, дорабатывается отдельно.',
                   foreground='#a00').pack(anchor='w', padx=8, pady=(0, 4))
-        self.var_report = tk.BooleanVar(value=True)
+        self.var_report = tk.BooleanVar(value=False)
         ttk.Checkbutton(what, text='Писать текстовый отчёт (report.txt рядом с результатом)',
                         variable=self.var_report).pack(anchor='w', padx=8, pady=(0, 6))
 
