@@ -408,6 +408,7 @@ class App:
         self.fr_repl_btn = ttk.Button(bot, text='Заменить отмеченное', command=self.start_replace)
         self.fr_repl_btn.pack(side='left', padx=6)
         self.fr_repl_btn['state'] = 'disabled'
+        ttk.Label(bot, text='(пусто = удалить найденное)', foreground='#666').pack(side='left', padx=6)
 
         logf = ttk.LabelFrame(tab, text='Журнал')
         logf.pack(fill='x', padx=6, pady=(0, 6))
@@ -840,9 +841,11 @@ class App:
         total_occ = sum(len(occ) for paras in selected.values() for occ in paras.values())
         in_place = self.var_inplace.get()
         where = 'ПЕРЕЗАПИШЕТ оригиналы' if in_place else f'сохранит копии ({SUFFIX})'
+        action = (f'Удалить «{self.fr_query}»' if replacement == ''
+                  else f'Заменить «{self.fr_query}» → «{replacement}»')
         if not messagebox.askyesno(
                 'Подтверждение замены',
-                f'Заменить «{self.fr_query}» → «{replacement}»\n'
+                f'{action}\n'
                 f'в {total_occ} вхождениях ({len(selected)} файлов).\n'
                 f'Операция {where}. Продолжить?'):
             return
