@@ -182,9 +182,41 @@ class App:
         self.fr_item_meta = {}          # tree item id -> meta
         self.fr_query = ''
         self.fr_match_case = False
+        self.fr_whole_word = True
 
         self._build_ui()
+        # Ctrl+C/V/X/A на русской раскладке (Ctrl шлёт кириллические клавиши,
+        # для которых нет стандартных биндов копирования/вставки).
+        self.root.bind_all('<Control-KeyPress>', self._ctrl_key)
         self.root.after(100, self._drain_queue)
+
+    def _ctrl_key(self, event):
+        """Копирование/вставка/вырезание/выделение при русской раскладке.
+        По латинским c/v/x/a не вмешиваемся — там работает стандартный бинд Tk;
+        реагируем только когда keysym не латинский (кириллица), опираясь на
+        keycode физической клавиши (он от раскладки не зависит)."""
+        if not (event.state & 0x4):        # не Control
+            return
+        if event.keysym.lower() in ('c', 'v', 'x', 'a'):
+            return                          # латиница — стандартный бинд справится
+        kc = event.keycode
+        vev = {67: '<<Copy>>', 86: '<<Paste>>', 88: '<<Cut>>'}.get(kc)  # C/V/X
+        if vev:
+            try:
+                event.widget.event_generate(vev)
+            except Exception:
+                pass
+            return 'break'
+        if kc == 65:                        # A — выделить всё
+            w = event.widget
+            try:
+                if isinstance(w, (tk.Entry, ttk.Entry)):
+                    w.select_range(0, 'end'); w.icursor('end')
+                elif isinstance(w, tk.Text):
+                    w.tag_add('sel', '1.0', 'end-1c')
+            except Exception:
+                pass
+            return 'break'
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -266,6 +298,8 @@ class App:
         self.fr_find.pack(side='left', padx=6)
         self.fr_case = tk.BooleanVar(value=False)
         ttk.Checkbutton(top, text='Учитывать регистр', variable=self.fr_case).pack(side='left', padx=6)
+        self.fr_partial = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text='Часть слова', variable=self.fr_partial).pack(side='left', padx=6)
         self.fr_find_btn = ttk.Button(top, text='🔍  Найти', command=self.start_scan)
         self.fr_find_btn.pack(side='left', padx=6)
 
@@ -367,7 +401,7 @@ class App:
                     self.progress['maximum'] = max(total, 1)
                     self.progress['value'] = done
                 elif kind == 'fr_results':
-                    self.fr_query, self.fr_match_case, self.fr_results = payload
+                    self.fr_query, self.fr_match_case, self.fr_whole_word, self.fr_results = payload
                     self._fr_populate()
                     self._set_busy(False)
                 elif kind == 'done':
@@ -466,25 +500,27 @@ class App:
         self.fr_tree.delete(*self.fr_tree.get_children())
         self.fr_results = {}
         self.fr_count['text'] = 'Идёт поиск…'
+        whole_word = not self.fr_partial.get()
         self.fr_log_msg(f'Поиск «{query}» в {len(files)} файлах '
-                        f'({"с учётом" if self.fr_case.get() else "без учёта"} регистра)…')
-        args = (files, query, self.fr_case.get())
+                        f'({"с учётом" if self.fr_case.get() else "без учёта"} регистра, '
+                        f'{"часть слова" if not whole_word else "целое слово"})…')
+        args = (files, query, self.fr_case.get(), whole_word)
         threading.Thread(target=self._run_scan, args=args, daemon=True).start()
 
-    def _run_scan(self, files, query, match_case):
+    def _run_scan(self, files, query, match_case, whole_word):
         total = len(files)
         self.msg_queue.put(('progress', (0, total)))
         results = {}
         for i, f in enumerate(files, 1):
             try:
-                m = FR.scan_file(f, query, match_case)
+                m = FR.scan_file(f, query, match_case, whole_word)
             except Exception:
                 m = []
                 self.fr_log_msg(f'[ОШИБКА чтения] {f}')
             if m:
                 results[f] = m
             self.msg_queue.put(('progress', (i, total)))
-        self.msg_queue.put(('fr_results', (query, match_case, results)))
+        self.msg_queue.put(('fr_results', (query, match_case, whole_word, results)))
 
     def _fr_populate(self):
         tree = self.fr_tree
@@ -575,10 +611,10 @@ class App:
             return
 
         self._set_busy(True)
-        args = (self.fr_query, replacement, self.fr_match_case, in_place, selected)
+        args = (self.fr_query, replacement, self.fr_match_case, self.fr_whole_word, in_place, selected)
         threading.Thread(target=self._run_replace, args=args, daemon=True).start()
 
-    def _run_replace(self, query, replacement, match_case, in_place, selected):
+    def _run_replace(self, query, replacement, match_case, whole_word, in_place, selected):
         total = len(selected)
         self.fr_log_msg('=' * 60)
         self.fr_log_msg(f'Замена «{query}» → «{replacement}» в {total} файлах…')
@@ -587,7 +623,7 @@ class App:
         for path, sel in selected.items():
             out = output_path_for(path, in_place)
             try:
-                n = FR.replace_file(path, out, query, replacement, match_case, sel)
+                n = FR.replace_file(path, out, query, replacement, match_case, whole_word, sel)
                 made += n
                 self.fr_log_msg(f'✓ {n} замен: {out}')
             except Exception:
