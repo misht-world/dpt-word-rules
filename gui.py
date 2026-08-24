@@ -31,6 +31,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 import find_replace as FR
+import doc_convert as DC
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STRUCT_SCRIPT = os.path.join(SCRIPT_DIR, 'normalize_structure.py')
@@ -73,6 +74,33 @@ def collect_docx(paths):
         if key not in seen and is_processable_docx(ap):
             seen.add(key)
             found.append(ap)
+
+    for p in paths:
+        if os.path.isdir(p):
+            for dirpath, dirnames, filenames in os.walk(p):
+                for fn in filenames:
+                    add(os.path.join(dirpath, fn))
+        elif os.path.isfile(p):
+            add(p)
+    return found
+
+
+def collect_doc(paths):
+    """Список файлов .doc (старый формат) в выбранных путях, рекурсивно.
+    Их нельзя обрабатывать напрямую — сначала конвертируются в .docx (Word)."""
+    found = []
+    seen = set()
+
+    def add(p):
+        ap = os.path.abspath(p)
+        key = os.path.normcase(ap)
+        name = os.path.basename(ap)
+        if key in seen or name.startswith('~$'):
+            return
+        if not name.lower().endswith('.doc'):
+            return
+        seen.add(key)
+        found.append(ap)
 
     for p in paths:
         if os.path.isdir(p):
@@ -412,6 +440,34 @@ class App:
             pass
         self.root.after(100, self._drain_queue)
 
+    def _convert_docs(self, doc_files, log):
+        """Конвертирует .doc → .docx (рядом) через Word. Возвращает список
+        путей .docx. log — колбэк вывода (self.log или self.fr_log_msg).
+        Выполняется в рабочем потоке (COM инициализируется внутри WordConverter)."""
+        out = []
+        if not doc_files:
+            return out
+        if not DC.available():
+            log(f'Найдено .doc: {len(doc_files)} — но Word/pywin32 недоступны, файлы пропущены.')
+            return out
+        log(f'Конвертация .doc → .docx через Word: {len(doc_files)} файл(ов)…')
+        conv = None
+        try:
+            conv = DC.WordConverter()
+            for d in doc_files:
+                try:
+                    t = conv.convert(d)
+                    out.append(t)
+                    log(f'   ✓ {os.path.basename(d)} → {os.path.basename(t)}')
+                except Exception as e:
+                    log(f'   [ОШИБКА конвертации] {os.path.basename(d)}: {e}')
+        except DC.ConversionUnavailable as e:
+            log(f'Не удалось запустить Word: {e}')
+        finally:
+            if conv:
+                conv.close()
+        return out
+
     def _set_busy(self, busy):
         self.busy = busy
         state = 'disabled' if busy else 'normal'
@@ -434,23 +490,29 @@ class App:
         if not self.paths:
             messagebox.showwarning('Нет входных данных', 'Добавьте файлы или папку.')
             return
-        files = collect_docx(self.paths)
-        if not files:
-            messagebox.showinfo('Пусто', 'В выбранных путях не найдено подходящих .docx.')
+        docx_files = collect_docx(self.paths)
+        doc_files = collect_doc(self.paths)
+        if not docx_files and not doc_files:
+            messagebox.showinfo('Пусто', 'В выбранных путях не найдено .docx или .doc.')
             return
         in_place = self.var_inplace.get()
+        extra = f' + {len(doc_files)} .doc (конвертация в .docx)' if doc_files else ''
         if in_place and not messagebox.askyesno(
                 'Перезапись оригиналов',
-                f'Будут ПЕРЕЗАПИСАНЫ {len(files)} исходных файлов.\n'
+                f'Будут ПЕРЕЗАПИСАНЫ {len(docx_files)} .docx{extra}.\n'
                 'Убедитесь, что есть бэкап. Продолжить?'):
             return
 
         self._set_busy(True)
         self._clear_text(self.log_text)
-        args = (files, False, do_typo, in_place, self.var_report.get())
+        args = (docx_files, doc_files, do_typo, in_place, self.var_report.get())
         threading.Thread(target=self._run_typo, args=args, daemon=True).start()
 
-    def _run_typo(self, files, do_struct, do_typo, in_place, make_report):
+    def _run_typo(self, docx_files, doc_files, do_typo, in_place, make_report):
+        files = list(docx_files)
+        for c in self._convert_docs(doc_files, self.log):
+            if c not in files:
+                files.append(c)
         total = len(files)
         mode = 'перезапись на месте' if in_place else f'копия ({SUFFIX})'
         self.log(f'Файлов: {total}   |   этап: типографика   |   выход: {mode}')
@@ -460,7 +522,7 @@ class App:
         for i, f in enumerate(files, 1):
             self.log(f'[{i}/{total}] {f}')
             try:
-                ok = process_one(f, do_struct, do_typo, in_place, make_report, self.log)
+                ok = process_one(f, False, do_typo, in_place, make_report, self.log)
             except Exception:
                 self.log('      [ИСКЛЮЧЕНИЕ] ' + traceback.format_exc())
                 ok = False
@@ -490,9 +552,10 @@ class App:
         if not self.paths:
             messagebox.showwarning('Нет входных данных', 'Добавьте файлы или папку.')
             return
-        files = collect_docx(self.paths)
-        if not files:
-            messagebox.showinfo('Пусто', 'В выбранных путях не найдено подходящих .docx.')
+        docx_files = collect_docx(self.paths)
+        doc_files = collect_doc(self.paths)
+        if not docx_files and not doc_files:
+            messagebox.showinfo('Пусто', 'В выбранных путях не найдено .docx или .doc.')
             return
 
         self._set_busy(True)
@@ -501,13 +564,17 @@ class App:
         self.fr_results = {}
         self.fr_count['text'] = 'Идёт поиск…'
         whole_word = not self.fr_partial.get()
-        self.fr_log_msg(f'Поиск «{query}» в {len(files)} файлах '
+        self.fr_log_msg(f'Поиск «{query}» '
                         f'({"с учётом" if self.fr_case.get() else "без учёта"} регистра, '
                         f'{"часть слова" if not whole_word else "целое слово"})…')
-        args = (files, query, self.fr_case.get(), whole_word)
+        args = (docx_files, doc_files, query, self.fr_case.get(), whole_word)
         threading.Thread(target=self._run_scan, args=args, daemon=True).start()
 
-    def _run_scan(self, files, query, match_case, whole_word):
+    def _run_scan(self, docx_files, doc_files, query, match_case, whole_word):
+        files = list(docx_files)
+        for c in self._convert_docs(doc_files, self.fr_log_msg):
+            if c not in files:
+                files.append(c)
         total = len(files)
         self.msg_queue.put(('progress', (0, total)))
         results = {}
