@@ -440,6 +440,31 @@ class App:
             pass
         self.root.after(100, self._drain_queue)
 
+    def _ask_doc_handling(self, doc_files):
+        """Спрашивает, что делать с найденными .doc. Возвращает:
+        'convert' — конвертировать и обработать; 'skip' — пропустить .doc;
+        'cancel' — прервать всю операцию."""
+        if not doc_files:
+            return 'skip'
+        n = len(doc_files)
+        if not DC.available():
+            ok = messagebox.askokcancel(
+                'Найдены файлы .doc',
+                f'Найдено файлов .doc (старый формат): {n}.\n'
+                'Автоконвертация недоступна (нет Word/pywin32) — они будут пропущены.\n\n'
+                'Продолжить с .docx?   (Отмена — прервать)')
+            return 'skip' if ok else 'cancel'
+        ans = messagebox.askyesnocancel(
+            'Найдены файлы .doc',
+            f'Найдено файлов .doc (старый формат Word): {n}.\n'
+            'Напрямую они не обрабатываются, но можно сконвертировать в .docx через Word.\n\n'
+            'Да — сконвертировать и обработать\n'
+            'Нет — пропустить .doc, работать только с .docx\n'
+            'Отмена — ничего не делать')
+        if ans is None:
+            return 'cancel'
+        return 'convert' if ans else 'skip'
+
     def _convert_docs(self, doc_files, log):
         """Конвертирует .doc → .docx (рядом) через Word. Возвращает список
         путей .docx. log — колбэк вывода (self.log или self.fr_log_msg).
@@ -495,8 +520,15 @@ class App:
         if not docx_files and not doc_files:
             messagebox.showinfo('Пусто', 'В выбранных путях не найдено .docx или .doc.')
             return
+        decision = self._ask_doc_handling(doc_files)
+        if decision == 'cancel':
+            return
+        use_doc = doc_files if decision == 'convert' else []
+        if not docx_files and not use_doc:
+            messagebox.showinfo('Пусто', 'Нечего обрабатывать (.doc пропущены).')
+            return
         in_place = self.var_inplace.get()
-        extra = f' + {len(doc_files)} .doc (конвертация в .docx)' if doc_files else ''
+        extra = f' + {len(use_doc)} .doc (конвертация в .docx)' if use_doc else ''
         if in_place and not messagebox.askyesno(
                 'Перезапись оригиналов',
                 f'Будут ПЕРЕЗАПИСАНЫ {len(docx_files)} .docx{extra}.\n'
@@ -505,7 +537,7 @@ class App:
 
         self._set_busy(True)
         self._clear_text(self.log_text)
-        args = (docx_files, doc_files, do_typo, in_place, self.var_report.get())
+        args = (docx_files, use_doc, do_typo, in_place, self.var_report.get())
         threading.Thread(target=self._run_typo, args=args, daemon=True).start()
 
     def _run_typo(self, docx_files, doc_files, do_typo, in_place, make_report):
@@ -557,6 +589,13 @@ class App:
         if not docx_files and not doc_files:
             messagebox.showinfo('Пусто', 'В выбранных путях не найдено .docx или .doc.')
             return
+        decision = self._ask_doc_handling(doc_files)
+        if decision == 'cancel':
+            return
+        use_doc = doc_files if decision == 'convert' else []
+        if not docx_files and not use_doc:
+            messagebox.showinfo('Пусто', 'Нечего искать (.doc пропущены).')
+            return
 
         self._set_busy(True)
         self._clear_text(self.fr_log)
@@ -567,7 +606,7 @@ class App:
         self.fr_log_msg(f'Поиск «{query}» '
                         f'({"с учётом" if self.fr_case.get() else "без учёта"} регистра, '
                         f'{"часть слова" if not whole_word else "целое слово"})…')
-        args = (docx_files, doc_files, query, self.fr_case.get(), whole_word)
+        args = (docx_files, use_doc, query, self.fr_case.get(), whole_word)
         threading.Thread(target=self._run_scan, args=args, daemon=True).start()
 
     def _run_scan(self, docx_files, doc_files, query, match_case, whole_word):
