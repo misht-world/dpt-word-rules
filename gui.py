@@ -441,11 +441,12 @@ class App:
         self.root.after(100, self._drain_queue)
 
     def _ask_doc_handling(self, doc_files):
-        """Спрашивает, что делать с найденными .doc. Возвращает:
-        'convert' — конвертировать и обработать; 'skip' — пропустить .doc;
-        'cancel' — прервать всю операцию."""
+        """Спрашивает, что делать с найденными .doc. Возвращает кортеж
+        (decision, delete_originals):
+          decision: 'convert' | 'skip' | 'cancel';
+          delete_originals: удалять ли исходные .doc после конвертации."""
         if not doc_files:
-            return 'skip'
+            return 'skip', False
         n = len(doc_files)
         if not DC.available():
             ok = messagebox.askokcancel(
@@ -453,22 +454,54 @@ class App:
                 f'Найдено файлов .doc (старый формат): {n}.\n'
                 'Автоконвертация недоступна (нет Word/pywin32) — они будут пропущены.\n\n'
                 'Продолжить с .docx?   (Отмена — прервать)')
-            return 'skip' if ok else 'cancel'
-        ans = messagebox.askyesnocancel(
-            'Найдены файлы .doc',
-            f'Найдено файлов .doc (старый формат Word): {n}.\n'
-            'Напрямую они не обрабатываются, но можно сконвертировать в .docx через Word.\n\n'
-            'Да — сконвертировать и обработать\n'
-            'Нет — пропустить .doc, работать только с .docx\n'
-            'Отмена — ничего не делать')
-        if ans is None:
-            return 'cancel'
-        return 'convert' if ans else 'skip'
+            return ('skip' if ok else 'cancel'), False
+        return self._ask_doc_dialog(n)
 
-    def _convert_docs(self, doc_files, log):
+    def _ask_doc_dialog(self, n):
+        """Модальный диалог с флажком удаления исходников.
+        Возвращает (decision, delete_originals)."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title('Найдены файлы .doc')
+        dlg.transient(self.root)
+        dlg.resizable(False, False)
+        result = {'decision': 'cancel'}
+        del_var = tk.BooleanVar(value=True)
+
+        msg = (f'Найдено файлов .doc (старый формат Word): {n}.\n'
+               'Напрямую они не обрабатываются, но можно сконвертировать в .docx через Word.\n\n'
+               'Да — сконвертировать и обработать\n'
+               'Нет — пропустить .doc, работать только с .docx\n'
+               'Отмена — ничего не делать')
+        ttk.Label(dlg, text=msg, justify='left').pack(padx=16, pady=(14, 8), anchor='w')
+        ttk.Checkbutton(dlg, text='Удалить исходные .doc после успешной конвертации',
+                        variable=del_var).pack(padx=16, anchor='w')
+        btns = ttk.Frame(dlg)
+        btns.pack(padx=16, pady=12, anchor='e')
+
+        def choose(d):
+            result['decision'] = d
+            result['delete'] = del_var.get()
+            dlg.destroy()
+
+        ttk.Button(btns, text='Да', command=lambda: choose('convert')).pack(side='left')
+        ttk.Button(btns, text='Нет', command=lambda: choose('skip')).pack(side='left', padx=6)
+        ttk.Button(btns, text='Отмена', command=lambda: choose('cancel')).pack(side='left')
+        dlg.protocol('WM_DELETE_WINDOW', lambda: choose('cancel'))
+
+        dlg.grab_set()
+        dlg.update_idletasks()
+        x = self.root.winfo_rootx() + max((self.root.winfo_width() - dlg.winfo_width()) // 2, 0)
+        y = self.root.winfo_rooty() + max((self.root.winfo_height() - dlg.winfo_height()) // 2, 0)
+        dlg.geometry(f'+{x}+{y}')
+        self.root.wait_window(dlg)
+        return result.get('decision', 'cancel'), result.get('delete', True)
+
+    def _convert_docs(self, doc_files, log, delete_originals=False):
         """Конвертирует .doc → .docx (рядом) через Word. Возвращает список
         путей .docx. log — колбэк вывода (self.log или self.fr_log_msg).
-        Выполняется в рабочем потоке (COM инициализируется внутри WordConverter)."""
+        delete_originals — удалять ли исходный .doc, но ТОЛЬКО если .docx был
+        реально создан сейчас (существовавший ранее .docx не считается своим и
+        исходник не трогаем). Выполняется в рабочем потоке."""
         out = []
         if not doc_files:
             return out
@@ -480,10 +513,18 @@ class App:
         try:
             conv = DC.WordConverter()
             for d in doc_files:
+                target = os.path.splitext(os.path.abspath(d))[0] + '.docx'
+                pre_existed = os.path.exists(target)
                 try:
                     t = conv.convert(d)
                     out.append(t)
                     log(f'   ✓ {os.path.basename(d)} → {os.path.basename(t)}')
+                    if delete_originals and not pre_existed and os.path.exists(t):
+                        try:
+                            os.remove(d)
+                            log('      удалён исходный .doc')
+                        except OSError as e:
+                            log(f'      не удалось удалить .doc: {e}')
                 except Exception as e:
                     log(f'   [ОШИБКА конвертации] {os.path.basename(d)}: {e}')
         except DC.ConversionUnavailable as e:
@@ -520,7 +561,7 @@ class App:
         if not docx_files and not doc_files:
             messagebox.showinfo('Пусто', 'В выбранных путях не найдено .docx или .doc.')
             return
-        decision = self._ask_doc_handling(doc_files)
+        decision, delete_doc = self._ask_doc_handling(doc_files)
         if decision == 'cancel':
             return
         use_doc = doc_files if decision == 'convert' else []
@@ -537,12 +578,12 @@ class App:
 
         self._set_busy(True)
         self._clear_text(self.log_text)
-        args = (docx_files, use_doc, do_typo, in_place, self.var_report.get())
+        args = (docx_files, use_doc, delete_doc, do_typo, in_place, self.var_report.get())
         threading.Thread(target=self._run_typo, args=args, daemon=True).start()
 
-    def _run_typo(self, docx_files, doc_files, do_typo, in_place, make_report):
+    def _run_typo(self, docx_files, doc_files, delete_doc, do_typo, in_place, make_report):
         files = list(docx_files)
-        for c in self._convert_docs(doc_files, self.log):
+        for c in self._convert_docs(doc_files, self.log, delete_doc):
             if c not in files:
                 files.append(c)
         total = len(files)
@@ -589,7 +630,7 @@ class App:
         if not docx_files and not doc_files:
             messagebox.showinfo('Пусто', 'В выбранных путях не найдено .docx или .doc.')
             return
-        decision = self._ask_doc_handling(doc_files)
+        decision, delete_doc = self._ask_doc_handling(doc_files)
         if decision == 'cancel':
             return
         use_doc = doc_files if decision == 'convert' else []
@@ -606,12 +647,12 @@ class App:
         self.fr_log_msg(f'Поиск «{query}» '
                         f'({"с учётом" if self.fr_case.get() else "без учёта"} регистра, '
                         f'{"часть слова" if not whole_word else "целое слово"})…')
-        args = (docx_files, use_doc, query, self.fr_case.get(), whole_word)
+        args = (docx_files, use_doc, delete_doc, query, self.fr_case.get(), whole_word)
         threading.Thread(target=self._run_scan, args=args, daemon=True).start()
 
-    def _run_scan(self, docx_files, doc_files, query, match_case, whole_word):
+    def _run_scan(self, docx_files, doc_files, delete_doc, query, match_case, whole_word):
         files = list(docx_files)
-        for c in self._convert_docs(doc_files, self.fr_log_msg):
+        for c in self._convert_docs(doc_files, self.fr_log_msg, delete_doc):
             if c not in files:
                 files.append(c)
         total = len(files)
