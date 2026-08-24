@@ -218,6 +218,7 @@ class App:
         self.fr_query = ''
         self.fr_match_case = False
         self.fr_whole_word = True
+        self.fr_flex_ws = True
 
         self._build_ui()
         # восстановить последний выбор путей
@@ -373,6 +374,8 @@ class App:
         ttk.Checkbutton(top, text='Учитывать регистр', variable=self.fr_case).pack(side='left', padx=6)
         self.fr_partial = tk.BooleanVar(value=False)
         ttk.Checkbutton(top, text='Часть слова', variable=self.fr_partial).pack(side='left', padx=6)
+        self.fr_flex = tk.BooleanVar(value=True)
+        ttk.Checkbutton(top, text='Пробел/дефис любой', variable=self.fr_flex).pack(side='left', padx=6)
         self.fr_find_btn = ttk.Button(top, text='🔍  Найти', command=self.start_scan)
         self.fr_find_btn.pack(side='left', padx=6)
 
@@ -403,12 +406,16 @@ class App:
         bot = ttk.Frame(tab)
         bot.pack(fill='x', padx=6, pady=6)
         ttk.Label(bot, text='Заменить на:').pack(side='left')
-        self.fr_repl = ttk.Entry(bot, width=34)
+        self.fr_repl = ttk.Entry(bot, width=28)
         self.fr_repl.pack(side='left', padx=6)
+        ttk.Button(bot, text='+нб.пробел', width=11,
+                   command=lambda: self._insert_char(self.fr_repl, ' ')).pack(side='left')
+        ttk.Button(bot, text='+нб.дефис', width=10,
+                   command=lambda: self._insert_char(self.fr_repl, '‑')).pack(side='left', padx=3)
         self.fr_repl_btn = ttk.Button(bot, text='Заменить отмеченное', command=self.start_replace)
         self.fr_repl_btn.pack(side='left', padx=6)
         self.fr_repl_btn['state'] = 'disabled'
-        ttk.Label(bot, text='(пусто = удалить найденное)', foreground='#666').pack(side='left', padx=6)
+        ttk.Label(bot, text='(пусто = удалить)', foreground='#666').pack(side='left', padx=4)
 
         logf = ttk.LabelFrame(tab, text='Журнал')
         logf.pack(fill='x', padx=6, pady=(0, 6))
@@ -494,6 +501,12 @@ class App:
             self._save_store()
             self._refresh_presets()
 
+    def _insert_char(self, entry, ch):
+        """Вставляет символ в позицию курсора поля ввода (для неразрывных
+        пробела/дефиса, которые с клавиатуры не набрать)."""
+        entry.insert('insert', ch)
+        entry.focus_set()
+
     # ------------------------------------------------------------- очередь/лог
     def _log_to(self, widget, msg):
         widget['state'] = 'normal'
@@ -520,7 +533,8 @@ class App:
                     self.progress['maximum'] = max(total, 1)
                     self.progress['value'] = done
                 elif kind == 'fr_results':
-                    self.fr_query, self.fr_match_case, self.fr_whole_word, self.fr_results = payload
+                    (self.fr_query, self.fr_match_case, self.fr_whole_word,
+                     self.fr_flex_ws, self.fr_results) = payload
                     self._fr_populate()
                     self._set_busy(False)
                 elif kind == 'done':
@@ -735,13 +749,15 @@ class App:
         self.fr_results = {}
         self.fr_count['text'] = 'Идёт поиск…'
         whole_word = not self.fr_partial.get()
+        flex_ws = self.fr_flex.get()
         self.fr_log_msg(f'Поиск «{query}» '
                         f'({"с учётом" if self.fr_case.get() else "без учёта"} регистра, '
-                        f'{"часть слова" if not whole_word else "целое слово"})…')
-        args = (docx_files, use_doc, delete_doc, query, self.fr_case.get(), whole_word)
+                        f'{"часть слова" if not whole_word else "целое слово"}'
+                        f'{", пробел/дефис любой" if flex_ws else ""})…')
+        args = (docx_files, use_doc, delete_doc, query, self.fr_case.get(), whole_word, flex_ws)
         threading.Thread(target=self._run_scan, args=args, daemon=True).start()
 
-    def _run_scan(self, docx_files, doc_files, delete_doc, query, match_case, whole_word):
+    def _run_scan(self, docx_files, doc_files, delete_doc, query, match_case, whole_word, flex_ws):
         files = list(docx_files)
         for c in self._convert_docs(doc_files, self.fr_log_msg, delete_doc):
             if c not in files:
@@ -751,14 +767,14 @@ class App:
         results = {}
         for i, f in enumerate(files, 1):
             try:
-                m = FR.scan_file(f, query, match_case, whole_word)
+                m = FR.scan_file(f, query, match_case, whole_word, flex_ws)
             except Exception:
                 m = []
                 self.fr_log_msg(f'[ОШИБКА чтения] {f}')
             if m:
                 results[f] = m
             self.msg_queue.put(('progress', (i, total)))
-        self.msg_queue.put(('fr_results', (query, match_case, whole_word, results)))
+        self.msg_queue.put(('fr_results', (query, match_case, whole_word, flex_ws, results)))
 
     def _fr_populate(self):
         tree = self.fr_tree
@@ -851,10 +867,11 @@ class App:
             return
 
         self._set_busy(True)
-        args = (self.fr_query, replacement, self.fr_match_case, self.fr_whole_word, in_place, selected)
+        args = (self.fr_query, replacement, self.fr_match_case, self.fr_whole_word,
+                self.fr_flex_ws, in_place, selected)
         threading.Thread(target=self._run_replace, args=args, daemon=True).start()
 
-    def _run_replace(self, query, replacement, match_case, whole_word, in_place, selected):
+    def _run_replace(self, query, replacement, match_case, whole_word, flex_ws, in_place, selected):
         total = len(selected)
         self.fr_log_msg('=' * 60)
         self.fr_log_msg(f'Замена «{query}» → «{replacement}» в {total} файлах…')
@@ -863,7 +880,7 @@ class App:
         for path, sel in selected.items():
             out = output_path_for(path, in_place)
             try:
-                n = FR.replace_file(path, out, query, replacement, match_case, whole_word, sel)
+                n = FR.replace_file(path, out, query, replacement, match_case, whole_word, flex_ws, sel)
                 made += n
                 self.fr_log_msg(f'✓ {n} замен: {out}')
             except Exception:

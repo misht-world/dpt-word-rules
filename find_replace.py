@@ -30,25 +30,47 @@ W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 NS = {'w': W_NS}
 
 
-def find_occurrences(text, query, match_case, whole_word=True):
+# Классы «эквивалентных» символов для гибкого поиска (flex_ws):
+# любой пробел и любой дефис/тире считаются одинаковыми при поиске.
+_SPACE_CHARS = ' \t '                 # пробел, таб, неразрывный пробел
+_HYPHEN_CHARS = '-‐‑‒–—'  # дефис, неразр. дефис, тире en/em
+_SPACE_CLASS = '[' + re.escape(_SPACE_CHARS) + ']'
+_HYPHEN_CLASS = '[' + re.escape(_HYPHEN_CHARS) + ']'
+
+
+def _build_pattern(query, whole_word, flex_ws):
+    """Регэксп для запроса. При flex_ws каждый пробел/дефис заменяется классом
+    «любой пробел»/«любой дефис». Каждый символ запроса матчит РОВНО один символ,
+    поэтому длина совпадения всегда равна len(query) — это важно для замены."""
+    parts = []
+    for ch in query:
+        if flex_ws and ch in _SPACE_CHARS:
+            parts.append(_SPACE_CLASS)
+        elif flex_ws and ch in _HYPHEN_CHARS:
+            parts.append(_HYPHEN_CLASS)
+        else:
+            parts.append(re.escape(ch))
+    pat = ''.join(parts)
+    if whole_word:
+        pat = r'(?<!\w)' + pat + r'(?!\w)'
+    return pat
+
+
+def find_occurrences(text, query, match_case, whole_word=True, flex_ws=True):
     """Список стартовых индексов НЕПЕРЕКРЫВАЮЩИХСЯ вхождений query в text.
 
-    whole_word=True (по умолчанию): совпадение только как отдельное слово/фраза —
-    по краям не должно быть буквы/цифры/подчёркивания (напр. поиск «точных вод»
-    НЕ находит «сточных вод»). whole_word=False: поиск как подстроки.
-    Длина каждого совпадения равна len(query) (шаблон — экранированный запрос),
-    поэтому индексы совместимы с заменой.
+    whole_word=True: совпадение только как отдельное слово/фраза (по краям нет
+    буквы/цифры/подчёркивания); False — поиск подстроки.
+    flex_ws=True: тип пробела (обычный/неразрывный) и дефиса/тире не важен.
+    Длина каждого совпадения равна len(query), поэтому индексы совместимы с заменой.
     """
     if not query:
         return []
     flags = 0 if match_case else re.IGNORECASE
-    pat = re.escape(query)
-    if whole_word:
-        pat = r'(?<!\w)' + pat + r'(?!\w)'
-    return [m.start() for m in re.finditer(pat, text, flags)]
+    return [m.start() for m in re.finditer(_build_pattern(query, whole_word, flex_ws), text, flags)]
 
 
-def scan_file(path, query, match_case, whole_word=True, ctx=35):
+def scan_file(path, query, match_case, whole_word=True, flex_ws=True, ctx=35):
     """Возвращает список совпадений в одном файле:
     dict(para_idx, occ_idx, before, match, after). Только чтение, без распаковки на диск."""
     try:
@@ -66,7 +88,7 @@ def scan_file(path, query, match_case, whole_word=True, ctx=35):
         full, _ = A.collect_paragraph_text(p)
         if not full:
             continue
-        for oi, i in enumerate(find_occurrences(full, query, match_case, whole_word)):
+        for oi, i in enumerate(find_occurrences(full, query, match_case, whole_word, flex_ws)):
             j = i + n
             matches.append({
                 'para_idx': pi,
@@ -78,12 +100,12 @@ def scan_file(path, query, match_case, whole_word=True, ctx=35):
     return matches
 
 
-def _build_replaced(text, query, replacement, match_case, whole_word, selected):
+def _build_replaced(text, query, replacement, match_case, whole_word, flex_ws, selected):
     """Заменяет в тексте только те вхождения, чей occ_idx входит в selected (set)."""
     n = len(query)
     out = []
     prev = 0
-    for oi, i in enumerate(find_occurrences(text, query, match_case, whole_word)):
+    for oi, i in enumerate(find_occurrences(text, query, match_case, whole_word, flex_ws)):
         out.append(text[prev:i])
         out.append(replacement if oi in selected else text[i:i + n])
         prev = i + n
@@ -91,7 +113,7 @@ def _build_replaced(text, query, replacement, match_case, whole_word, selected):
     return ''.join(out)
 
 
-def replace_file(path, out_path, query, replacement, match_case, whole_word, selected_by_para):
+def replace_file(path, out_path, query, replacement, match_case, whole_word, flex_ws, selected_by_para):
     """Применяет замену к выбранным вхождениям и сохраняет результат в out_path.
 
     selected_by_para: dict para_idx -> set(occ_idx). Возвращает число замен.
@@ -117,7 +139,7 @@ def replace_file(path, out_path, query, replacement, match_case, whole_word, sel
             if not sel:
                 continue
             full, spans = A.collect_paragraph_text(p)
-            new_text = _build_replaced(full, query, replacement, match_case, whole_word, sel)
+            new_text = _build_replaced(full, query, replacement, match_case, whole_word, flex_ws, sel)
             if new_text != full:
                 made += len(sel)
                 new_vals = A.redistribute(full, new_text, spans)
