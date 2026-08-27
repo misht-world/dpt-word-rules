@@ -217,7 +217,8 @@ def fix_address_parts(text):
     # д./кв./корп. + номер; лит. + буква литеры — всегда числовой/буквенный номер справа,
     # заглавная буква тут ничего не решает (в отличие от ул./пр.)
     text = _sub(r'\b(д|кв|корп)\.[ \t]+(?=\d)', lambda m: m.group(1) + '.' + NBSP, text, 'addr-num')
-    text = _sub(r'\bлит\.[ \t]+(?=[А-ЯЁ]\b)', 'лит.' + NBSP, text, 'addr-lit')
+    text = _sub(r'\b(литер(?:а|ы|е|у|ой|ою)?|лит\.?)[ \t]+(?=[А-ЯЁ](?:\b|\d))',
+                lambda m: m.group(1) + NBSP, text, 'addr-lit')
     return text
 
 
@@ -469,6 +470,17 @@ def fix_money(text):
     return text
 
 
+def fix_digit_groups(text):
+    """Разряды больших чисел: пробел-разделитель тысяч делаем неразрывным.
+    "1 222,5" -> "1<nbsp>222,5"; "1 234 567" -> все внутренние пробелы nbsp.
+    Требуется 1-3 ведущие цифры + группы РОВНО по 3 (иначе это не разряды),
+    поэтому годы "2020 2021" и т.п. не задеваются."""
+    text = _sub(r'(?<!\d)\d{1,3}(?:[ \t]\d{3})+(?:[.,]\d+)?(?!\d)',
+                lambda m: m.group(0).replace(' ', NBSP).replace('\t', NBSP),
+                text, 'digit-groups')
+    return text
+
+
 def fix_org_inner_clean(text):
     """Финальный проход: внутри кавычек орг-названий убираем неразрывные ПРОБЕЛЫ
     (которые мог добавить fix_prepositions, напр. после «и»), возвращая обычные.
@@ -493,6 +505,7 @@ PIPELINE = [
     fix_kod,
     fix_ref_words,
     fix_money,
+    fix_digit_groups,
     fix_ish_vh,
     fix_st_vd,
     fix_codes_refs,
