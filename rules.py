@@ -430,9 +430,12 @@ def fix_dashes(text):
 # ---------------------------------------------------------------------------
 
 def fix_quotes(text):
-    def repl(m):
-        return '«' + m.group(1) + '»'
-    text = _sub(r'"([^"\n]+)"', repl, text, 'straight-quotes')
+    # английские/типографские кудрявые кавычки -> ёлочки (частая автозамена Word)
+    text = _sub(r'“([^“”\n]+?)”', lambda m: '«' + m.group(1) + '»', text, 'quotes-curly')
+    text = _sub(r'„([^„“\n]+?)“', lambda m: '«' + m.group(1) + '»', text, 'quotes-curly')
+    # прямые "..." -> «...», но ТОЛЬКО как парные кавычки-слова: открывающая не
+    # после буквы/цифры, закрывающая не перед ними. Отсекает дюймы (5") и непарные.
+    text = _sub(r'(?<!\w)"([^"\n]+?)"(?!\w)', lambda m: '«' + m.group(1) + '»', text, 'quotes-straight')
     return text
 
 
