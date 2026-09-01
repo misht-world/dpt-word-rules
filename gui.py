@@ -23,6 +23,7 @@ import os
 import sys
 import json
 import queue
+import shutil
 import threading
 import subprocess
 import tempfile
@@ -33,6 +34,9 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 
 import find_replace as FR
 import doc_convert as DC
+import templates as TPL
+
+NO_TEMPLATE = '(шаблон не выбран)'
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STRUCT_SCRIPT = os.path.join(SCRIPT_DIR, 'normalize_structure.py')
@@ -154,45 +158,53 @@ def run_script(script, args):
         return -1, traceback.format_exc()
 
 
-def process_one(input_path, do_struct, do_typo, in_place, make_report, log):
-    """Обрабатывает один файл выбранными этапами. Возвращает True при успехе.
-    log(str) — колбэк для вывода в интерфейс."""
+def process_one(input_path, do_typo, template_name, in_place, make_report, log):
+    """Обрабатывает один файл: типографика (subprocess apply_docx) и/или шаблон
+    оформления (in-process templates.apply_template). Возвращает True при успехе.
+    Этапы выполняются цепочкой через временные файлы. log(str) — вывод в UI."""
     final_out = output_path_for(input_path, in_place)
     out_root, _ = os.path.splitext(final_out)
 
-    tmp_dir = None
-    stages = []
-    if do_struct and do_typo:
-        tmp_dir = tempfile.mkdtemp(prefix='dpt_gui_')
-        mid = os.path.join(tmp_dir, 'stage_struct.docx')
-        stages.append(('Структура', STRUCT_SCRIPT, input_path, mid,
-                       out_root + '.structure.report.txt'))
-        stages.append(('Типографика', TYPO_SCRIPT, mid, final_out,
-                       out_root + '.typo.report.txt'))
-    elif do_struct:
-        stages.append(('Структура', STRUCT_SCRIPT, input_path, final_out,
-                       out_root + '.structure.report.txt'))
-    elif do_typo:
-        stages.append(('Типографика', TYPO_SCRIPT, input_path, final_out,
-                       out_root + '.typo.report.txt'))
+    steps = []
+    if do_typo:
+        steps.append('typo')
+    if template_name:
+        steps.append('template')
+    if not steps:
+        return False
 
+    tmp_dir = tempfile.mkdtemp(prefix='dpt_gui_')
     ok = True
     try:
-        for label, script, src, dst, report in stages:
-            args = [src, dst]
-            if make_report:
-                args += ['--report', report]
-            code, out = run_script(script, args)
-            for line in out.splitlines():
-                log(f'      {line}')
-            if code != 0:
-                log(f'   [ОШИБКА] этап "{label}", код {code}')
-                ok = False
-                break
+        current = input_path
+        for i, step in enumerate(steps):
+            last = (i == len(steps) - 1)
+            dst = final_out if last else os.path.join(tmp_dir, f'stage{i}.docx')
+            if step == 'typo':
+                args = [current, dst]
+                if make_report:
+                    args += ['--report', out_root + '.typo.report.txt']
+                code, out = run_script(TYPO_SCRIPT, args)
+                for line in out.splitlines():
+                    log(f'      {line}')
+                if code != 0:
+                    log(f'   [ОШИБКА] типографика, код {code}')
+                    ok = False
+                    break
+            elif step == 'template':
+                try:
+                    st = TPL.apply_template(current, dst, template_name)
+                    log(f'      шаблон «{template_name}»: секций {st["sections"]}, '
+                        f'альбомных пропущено {st["landscape_skipped"]}, '
+                        f'шапка={"да" if st["header"] else "нет"}, '
+                        f'номер страницы={"да" if st["footer"] else "нет"}')
+                except Exception as e:
+                    log(f'   [ОШИБКА] шаблон: {e}')
+                    ok = False
+                    break
+            current = dst
     finally:
-        if tmp_dir:
-            import shutil
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     return ok
 
 
@@ -347,9 +359,20 @@ class App:
         ttk.Checkbutton(what, text='Писать текстовый отчёт (report.txt рядом с результатом)',
                         variable=self.var_report).pack(anchor='w', padx=8, pady=(0, 6))
 
+        trow = ttk.Frame(what)
+        trow.pack(fill='x', padx=8, pady=(0, 6))
+        ttk.Label(trow, text='Шаблон оформления:').pack(side='left')
+        self.var_template = tk.StringVar(value=NO_TEMPLATE)
+        self.template_combo = ttk.Combobox(trow, state='readonly', width=32,
+                                            textvariable=self.var_template,
+                                            values=[NO_TEMPLATE] + TPL.template_names())
+        self.template_combo.pack(side='left', padx=6)
+        ttk.Label(trow, text='(поля страницы + колонтитулы; заголовки/таблицы не трогает)',
+                  foreground='#666').pack(side='left', padx=4)
+
         row = ttk.Frame(tab)
         row.pack(fill='x', padx=6, pady=4)
-        self.typo_btn = ttk.Button(row, text='▶  Запустить типографику', command=self.start_typo)
+        self.typo_btn = ttk.Button(row, text='▶  Обработать', command=self.start_typo)
         self.typo_btn.pack(side='left')
 
         logf = ttk.LabelFrame(tab, text='Журнал')
@@ -678,8 +701,12 @@ class App:
         if self.busy:
             return
         do_typo = self.var_typo.get()
-        if not do_typo:
-            messagebox.showwarning('Нечего делать', 'Включите тумблер «Типографика».')
+        template_name = self.var_template.get()
+        if template_name == NO_TEMPLATE:
+            template_name = None
+        if not do_typo and not template_name:
+            messagebox.showwarning('Нечего делать',
+                                   'Включите «Типографику» или выберите шаблон оформления.')
             return
         if not self.paths:
             messagebox.showwarning('Нет входных данных', 'Добавьте файлы или папку.')
@@ -706,24 +733,26 @@ class App:
 
         self._set_busy(True)
         self._clear_text(self.log_text)
-        args = (docx_files, use_doc, delete_doc, do_typo, in_place, self.var_report.get())
+        args = (docx_files, use_doc, delete_doc, do_typo, template_name, in_place, self.var_report.get())
         threading.Thread(target=self._run_typo, args=args, daemon=True).start()
 
-    def _run_typo(self, docx_files, doc_files, delete_doc, do_typo, in_place, make_report):
+    def _run_typo(self, docx_files, doc_files, delete_doc, do_typo, template_name, in_place, make_report):
         files = list(docx_files)
         for c in self._convert_docs(doc_files, self.log, delete_doc):
             if c not in files:
                 files.append(c)
         total = len(files)
         mode = 'перезапись на месте' if in_place else f'копия ({SUFFIX})'
-        self.log(f'Файлов: {total}   |   этап: типографика   |   выход: {mode}')
+        stages = ' + '.join([s for s in [('типографика' if do_typo else None),
+                                         (f'шаблон «{template_name}»' if template_name else None)] if s])
+        self.log(f'Файлов: {total}   |   {stages}   |   выход: {mode}')
         self.log('=' * 70)
         self.msg_queue.put(('progress', (0, total)))
         ok_count = err_count = 0
         for i, f in enumerate(files, 1):
             self.log(f'[{i}/{total}] {f}')
             try:
-                ok = process_one(f, False, do_typo, in_place, make_report, self.log)
+                ok = process_one(f, do_typo, template_name, in_place, make_report, self.log)
             except Exception:
                 self.log('      [ИСКЛЮЧЕНИЕ] ' + traceback.format_exc())
                 ok = False
