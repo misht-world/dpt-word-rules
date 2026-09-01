@@ -158,7 +158,7 @@ def run_script(script, args):
         return -1, traceback.format_exc()
 
 
-def process_one(input_path, do_typo, template_name, in_place, make_report, log):
+def process_one(input_path, do_typo, template_name, keep_rows, in_place, make_report, log):
     """Обрабатывает один файл: типографика (subprocess apply_docx) и/или шаблон
     оформления (in-process templates.apply_template). Возвращает True при успехе.
     Этапы выполняются цепочкой через временные файлы. log(str) — вывод в UI."""
@@ -184,6 +184,8 @@ def process_one(input_path, do_typo, template_name, in_place, make_report, log):
                 args = [current, dst]
                 if make_report:
                     args += ['--report', out_root + '.typo.report.txt']
+                if keep_rows:
+                    args.append('--keep-table-rows')
                 code, out = run_script(TYPO_SCRIPT, args)
                 for line in out.splitlines():
                     log(f'      {line}')
@@ -357,7 +359,10 @@ class App:
                   foreground='#a00').pack(anchor='w', padx=8, pady=(0, 4))
         self.var_report = tk.BooleanVar(value=False)
         ttk.Checkbutton(what, text='Писать текстовый отчёт (report.txt рядом с результатом)',
-                        variable=self.var_report).pack(anchor='w', padx=8, pady=(0, 6))
+                        variable=self.var_report).pack(anchor='w', padx=8, pady=(0, 2))
+        self.var_keeprows = tk.BooleanVar(value=False)
+        ttk.Checkbutton(what, text='(тест) Таблицы: не отрывать первые 3 и предпоследнюю строку от следующей',
+                        variable=self.var_keeprows).pack(anchor='w', padx=8, pady=(0, 6))
 
         trow = ttk.Frame(what)
         trow.pack(fill='x', padx=8, pady=(0, 6))
@@ -733,10 +738,12 @@ class App:
 
         self._set_busy(True)
         self._clear_text(self.log_text)
-        args = (docx_files, use_doc, delete_doc, do_typo, template_name, in_place, self.var_report.get())
+        args = (docx_files, use_doc, delete_doc, do_typo, template_name,
+                self.var_keeprows.get(), in_place, self.var_report.get())
         threading.Thread(target=self._run_typo, args=args, daemon=True).start()
 
-    def _run_typo(self, docx_files, doc_files, delete_doc, do_typo, template_name, in_place, make_report):
+    def _run_typo(self, docx_files, doc_files, delete_doc, do_typo, template_name,
+                  keep_rows, in_place, make_report):
         files = list(docx_files)
         for c in self._convert_docs(doc_files, self.log, delete_doc):
             if c not in files:
@@ -752,7 +759,7 @@ class App:
         for i, f in enumerate(files, 1):
             self.log(f'[{i}/{total}] {f}')
             try:
-                ok = process_one(f, do_typo, template_name, in_place, make_report, self.log)
+                ok = process_one(f, do_typo, template_name, keep_rows, in_place, make_report, self.log)
             except Exception:
                 self.log('      [ИСКЛЮЧЕНИЕ] ' + traceback.format_exc())
                 ok = False

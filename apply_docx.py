@@ -168,7 +168,30 @@ def set_keep_next(p):
         kn = etree.SubElement(ppr, qn('keepNext'))
 
 
-def process(doc_path, dry_run=False, report_path=None):
+def set_table_keep_rows(root):
+    """Экспериментально: для каждой таблицы ставит keepNext ("не отрывать от
+    следующего") на абзацы первых 3 строк и предпоследней строки — чтобы шапка
+    таблицы и её начало не отрывались от продолжения, а последняя строка не
+    оставалась одна. Возвращает число затронутых строк.
+    ВАЖНО: поведение в Word нужно проверять глазами (пагинация таблиц зависит
+    ещё и от cantSplit/разметки), поэтому опция по умолчанию выключена."""
+    rows_touched = 0
+    for tbl in root.iter(qn('tbl')):
+        rows = tbl.findall('w:tr', NS)   # прямые строки таблицы (не вложенные)
+        n = len(rows)
+        if n == 0:
+            continue
+        idxs = set(range(min(3, n)))
+        if n >= 2:
+            idxs.add(n - 2)              # предпоследняя
+        for i in idxs:
+            rows_touched += 1
+            for p in rows[i].findall('.//w:p', NS):
+                set_keep_next(p)
+    return rows_touched
+
+
+def process(doc_path, dry_run=False, report_path=None, keep_table_rows=False):
     tree = etree.parse(doc_path)
     root = tree.getroot()
 
@@ -219,8 +242,17 @@ def process(doc_path, dry_run=False, report_path=None):
             f.write(f"Добавлен keepNext: {keepnext_added}\n\n")
             f.write('\n'.join(report_lines))
 
+    rows_kept = 0
+    if keep_table_rows:
+        rows_kept = set_table_keep_rows(root)
+        if report_path:
+            with open(report_path, 'a', encoding='utf-8') as f:
+                f.write(f"\nТаблицы: keepNext на строк (первые 3 + предпоследняя): {rows_kept}\n")
+
     print(f"Изменено абзацев: {total_changed}")
     print(f"Добавлен keepNext (абзац оканчивается на ':'): {keepnext_added}")
+    if keep_table_rows:
+        print(f"Таблицы: keepNext на строк (первые 3 + предпоследняя): {rows_kept}")
 
     if not dry_run:
         tree.write(doc_path, xml_declaration=True, encoding='UTF-8', standalone=True)
@@ -232,6 +264,8 @@ def main():
     ap.add_argument('output', nargs='?', help='Куда сохранить результат (.docx). Не нужен при --dry-run.')
     ap.add_argument('--dry-run', action='store_true', help='Только показать список замен, не изменяя файл')
     ap.add_argument('--report', help='Путь к текстовому отчёту со списком всех замен')
+    ap.add_argument('--keep-table-rows', action='store_true',
+                    help='(тест) keepNext на первые 3 и предпоследнюю строку каждой таблицы')
     args = ap.parse_args()
 
     import tempfile
@@ -249,7 +283,8 @@ def main():
 
     doc_xml = os.path.join(workdir, 'word', 'document.xml')
 
-    process(doc_xml, dry_run=args.dry_run, report_path=args.report)
+    process(doc_xml, dry_run=args.dry_run, report_path=args.report,
+            keep_table_rows=args.keep_table_rows)
 
     if not args.dry_run:
         if not args.output:
