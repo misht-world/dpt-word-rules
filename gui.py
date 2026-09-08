@@ -35,6 +35,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 import find_replace as FR
 import doc_convert as DC
 import templates as TPL
+import grad_style as GS
 
 NO_TEMPLATE = '(шаблон не выбран)'
 
@@ -158,16 +159,19 @@ def run_script(script, args):
         return -1, traceback.format_exc()
 
 
-def process_one(input_path, do_typo, template_name, keep_rows, in_place, make_report, log):
-    """Обрабатывает один файл: типографика (subprocess apply_docx) и/или шаблон
-    оформления (in-process templates.apply_template). Возвращает True при успехе.
-    Этапы выполняются цепочкой через временные файлы. log(str) — вывод в UI."""
+def process_one(input_path, do_typo, template_name, keep_rows,
+                add_styles, reformat, in_place, make_report, log):
+    """Обрабатывает один файл цепочкой этапов: типографика (subprocess apply_docx),
+    фирменные стили (grad_style: вклейка/переоформление), шаблон оформления
+    (templates: поля/колонтитулы). Возвращает True при успехе. log — вывод в UI."""
     final_out = output_path_for(input_path, in_place)
     out_root, _ = os.path.splitext(final_out)
 
     steps = []
     if do_typo:
         steps.append('typo')
+    if add_styles or reformat:
+        steps.append('grad')
     if template_name:
         steps.append('template')
     if not steps:
@@ -191,6 +195,18 @@ def process_one(input_path, do_typo, template_name, keep_rows, in_place, make_re
                     log(f'      {line}')
                 if code != 0:
                     log(f'   [ОШИБКА] типографика, код {code}')
+                    ok = False
+                    break
+            elif step == 'grad':
+                try:
+                    st = GS.apply(current, dst, add_styles=add_styles, reformat=reformat)
+                    msg = f'      фирменные стили: вклеено {st["styles_added"]}'
+                    if reformat:
+                        msg += (f'; переоформлено — титул {st["title"]}, '
+                                f'заголовков разделов {st["h1"]}, подзаголовков {st["h2"]}')
+                    log(msg)
+                except Exception as e:
+                    log(f'   [ОШИБКА] фирменные стили: {e}')
                     ok = False
                     break
             elif step == 'template':
@@ -372,8 +388,17 @@ class App:
                                             textvariable=self.var_template,
                                             values=[NO_TEMPLATE] + TPL.template_names())
         self.template_combo.pack(side='left', padx=6)
-        ttk.Label(trow, text='(поля страницы + колонтитулы; заголовки/таблицы не трогает)',
+        ttk.Label(trow, text='(поля страницы + колонтитулы)',
                   foreground='#666').pack(side='left', padx=4)
+
+        self.var_addstyles = tk.BooleanVar(value=False)
+        ttk.Checkbutton(what, text='Добавить фирменные стили (в панель Word: «Заголовок раздела», '
+                                   '«Вывод/Важно», «Источник» и др.)',
+                        variable=self.var_addstyles).pack(anchor='w', padx=8, pady=(0, 2))
+        self.var_reformat = tk.BooleanVar(value=False)
+        ttk.Checkbutton(what, text='(тест) Переоформить под фирменные стили (титул и заголовки '
+                                   'разделов → фирменный вид)',
+                        variable=self.var_reformat).pack(anchor='w', padx=8, pady=(0, 6))
 
         row = ttk.Frame(tab)
         row.pack(fill='x', padx=6, pady=4)
@@ -709,9 +734,12 @@ class App:
         template_name = self.var_template.get()
         if template_name == NO_TEMPLATE:
             template_name = None
-        if not do_typo and not template_name:
+        add_styles = self.var_addstyles.get()
+        reformat = self.var_reformat.get()
+        if not (do_typo or template_name or add_styles or reformat):
             messagebox.showwarning('Нечего делать',
-                                   'Включите «Типографику» или выберите шаблон оформления.')
+                                   'Включите «Типографику», выберите шаблон или включите '
+                                   'добавление/переоформление стилей.')
             return
         if not self.paths:
             messagebox.showwarning('Нет входных данных', 'Добавьте файлы или папку.')
@@ -739,19 +767,22 @@ class App:
         self._set_busy(True)
         self._clear_text(self.log_text)
         args = (docx_files, use_doc, delete_doc, do_typo, template_name,
-                self.var_keeprows.get(), in_place, self.var_report.get())
+                self.var_keeprows.get(), add_styles, reformat, in_place, self.var_report.get())
         threading.Thread(target=self._run_typo, args=args, daemon=True).start()
 
     def _run_typo(self, docx_files, doc_files, delete_doc, do_typo, template_name,
-                  keep_rows, in_place, make_report):
+                  keep_rows, add_styles, reformat, in_place, make_report):
         files = list(docx_files)
         for c in self._convert_docs(doc_files, self.log, delete_doc):
             if c not in files:
                 files.append(c)
         total = len(files)
         mode = 'перезапись на месте' if in_place else f'копия ({SUFFIX})'
-        stages = ' + '.join([s for s in [('типографика' if do_typo else None),
-                                         (f'шаблон «{template_name}»' if template_name else None)] if s])
+        stages = ' + '.join([s for s in [
+            ('типографика' if do_typo else None),
+            ('стили' if add_styles and not reformat else None),
+            ('переоформление' if reformat else None),
+            (f'шаблон «{template_name}»' if template_name else None)] if s])
         self.log(f'Файлов: {total}   |   {stages}   |   выход: {mode}')
         self.log('=' * 70)
         self.msg_queue.put(('progress', (0, total)))
@@ -759,7 +790,8 @@ class App:
         for i, f in enumerate(files, 1):
             self.log(f'[{i}/{total}] {f}')
             try:
-                ok = process_one(f, do_typo, template_name, keep_rows, in_place, make_report, self.log)
+                ok = process_one(f, do_typo, template_name, keep_rows,
+                                 add_styles, reformat, in_place, make_report, self.log)
             except Exception:
                 self.log('      [ИСКЛЮЧЕНИЕ] ' + traceback.format_exc())
                 ok = False
