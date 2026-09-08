@@ -103,6 +103,8 @@ def fix_number_sign(text):
     text = _sub(r'№[ \t]*(?=\d)', '№' + NBSP, text, 'numsign-after')
     # "№ исх." / "№ Вх" — неразрывный пробел между № и пометкой исходящий/входящий
     text = _sub(r'№[ \t]+(?=(?:исх|вх)\b)', '№' + NBSP, text, 'numsign-ishvh', flags=re.IGNORECASE)
+    # "№ РФ-…", "№ КУВИ-…", "№ ИВ-…" — № перед буквенным кодом документа -> nbsp
+    text = _sub(r'№[ \t]+(?=[А-ЯЁA-Z])', '№' + NBSP, text, 'numsign-alpha')
     # перед № — только если непосредственно слева есть непробельный символ (буква/скобка и т.п.)
     text = _sub(r'(?<=[^\s\u00A0(«»"„“”])[ \t]+(?=№)', NBSP, text, 'numsign-before')
     return text
