@@ -231,6 +231,10 @@ def fix_address_parts(text):
 def fix_uchastok(text):
     text = _sub(r'\b(участ(?:ок|ка|ку|ком|ке|ки|ков|кам|ками|ках))[ \t]+(?=№|\d)',
                 lambda m: m.group(1) + NBSP, text, 'uchastok')
+    # "квартал" во всех склонениях (в т.ч. с заглавной) + номер/№ -> nbsp:
+    # "Квартал 3", "Кварталу 1", "кварталов 12". IGNORECASE — ловит и Квартал.
+    text = _sub(r'\bквартал(?:а|у|ом|е|ы|ов|ам|ами|ах)?\b[ \t]+(?=№|\d)',
+                lambda m: m.group(0).rstrip() + NBSP, text, 'kvartal', flags=re.IGNORECASE)
     return text
 
 
